@@ -1,0 +1,1 @@
+"# Fichiers g‚n‚r‚s\n__pycache__/\n*.pyc\n\n# Dossiers sp‚cifiques\nhtml/\npng/\nrapports/\nextraction/\n\n# Fichiers journaux\n*.log\n\n# Fichiers sp‚cifiques au systŠme\n.DS_Store\nThumbs.db\n\n# Fichiers de configuration locale\n.env" 
