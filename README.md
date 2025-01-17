@@ -15,13 +15,21 @@
  Given a list of scientists (including their names, professional email addresses, and employers) working in a
  speci c GDR or research laboratory, and a list of research topics pursued in that GDR or laboratory, the task
  is to extract the following information from the HAL database:
- Extract the publications of all scientists on the list for a given period.
- Extract the unique HAL IDs of the scientists.
- For each scientist, extract the topics they have published on and the venues (conferences, journals, etc.).
- Visualize statistics (histograms, distribution curves, pie charts, etc.) on the various topics the scientists
+ 
+ -Extract the publications of all scientists on the list for a given period.
+ 
+ -Extract the unique HAL IDs of the scientists.
+ 
+ -For each scientist, extract the topics they have published on and the venues (conferences, journals, etc.).
+ 
+ -Visualize statistics (histograms, distribution curves, pie charts, etc.) on the various topics the scientists
  have published on.
- Visualize the time evolution of the number of publications in di erent venues and on di erent topics.
- Automatically generate reports on publications according to various criteria.
+ 
+ -Visualize the time evolution of the number of publications in different venues and on different topics.
+ 
+ -Automatically generate reports on publications according to various criteria.
+ 
+ ---
 
 ## OBJECTIF:
 
@@ -36,3 +44,44 @@ Cet outil vise a faciliter l’exploration et l’exploitation des donnees de re
  
  **• Rapports automatises :** Produire des rapports complets au format PDF ou LaTeX integrant les graphiques generes pour une presentation claire et professionnelle.
  
+ ---
+
+ ## Installation
+### Pré-requis
+- Python 3.8 ou une version ultérieure.
+- Un environnement virtuel (recommandé).
+
+### Étapes d'installation
+1. Clonez ce dépôt :
+   ```bash
+   git clone https://github.com/ChancellaLITOKO/PROJET_HAL_.git
+   cd PROJET_HAL_
+   ```
+
+2. Créez un environnement virtuel :
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # Sur Windows : venv\Scripts\activate
+   ```
+
+3. Installez les dépendances :
+   ```bash
+   pip install -r requirements.txt
+   ```
+---
+
+## Utilisation
+### Lancer le projet
+1. Assurez-vous que toutes les dépendances sont installées.
+2. Toutes les etapes necessaires pour l'utilisation de l'application app.py et lancement dans la console main.py est dans la documentation que vous pourriez retrouvez dans ce dossier
+
+ ## Références
+- [HAL](https://hal.science)
+- [INS2I - CNRS](https://www.ins2i.cnrs.fr/fr)
+
+### Contacts
+- **Client** : Mihaly Petreczky (mihaly.petreczky@centralelille.fr), CRIStAL, CNRS.
+
+  ### Auteurs:
+  - Anas NAY
+  - Chancella Litoko
