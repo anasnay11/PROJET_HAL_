@@ -24,7 +24,7 @@ from tqdm import tqdm
 
 def list_csv_files():
     current_directory = os.path.dirname(os.path.abspath(__file__))
-    data_directory = os.path.join(current_directory, "data gdrmacs")
+    data_directory = os.path.join(current_directory,"..","data gdrmacs")
     if not os.path.exists(data_directory):
         raise FileNotFoundError(f"Le dossier '{data_directory}' est introuvable.")
 
