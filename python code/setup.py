@@ -6,8 +6,8 @@ setup(
     description="Outil pour analyser les publications scientifiques avec la base HAL",
     authors="chancella Litoko, Anas Nay",
     author_email="litoko.13chancella@gmail.com , anasnay7@gmail.com",
-    packages=find_packages(),  # Trouver tous les packages Python dans le projet
-    include_package_data=True,  # Inclure tous les fichiers de données 
+    packages=find_packages(where="."),
+    package_dir={"":"."} , 
     install_requires=[
         "fpdf",        
         "pandas",      
@@ -16,7 +16,7 @@ setup(
         "requests",    
         "unidecode",
         "kaleido" ,
-        "tkinter" ,
+        "tk" ,
         "matplotlib" 
     ],
     entry_points={
