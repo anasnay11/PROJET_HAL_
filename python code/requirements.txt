@@ -1,8 +1,0 @@
-fpdf
-pandas
-plotly
-requests
-tqdm
-unidecode
-tkinter
-kaleido

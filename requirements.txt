@@ -1,0 +1,8 @@
+fpdf
+pandas
+plotly
+matplotlib
+requests
+tqdm
+unidecode
+kaleido
