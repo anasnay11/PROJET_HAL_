@@ -275,11 +275,11 @@ def generer_rapport():
         # Générer le rapport selon le choix
         if format_choisi == "PDF":
             fichier_pdf = f"{nom_fichier_csv}.pdf"
-            generate_pdf_report(fichier_pdf, nom_fichier_csv)
+            generate_pdf_report(nom_fichier_csv)
             messagebox.showinfo("Rapport PDF", f"Le rapport PDF '{fichier_pdf}' a été généré avec succès.")
         elif format_choisi == "LaTeX":
             fichier_latex = f"{nom_fichier_csv}.tex"
-            generate_latex_report(fichier_latex, nom_fichier_csv)
+            generate_latex_report(nom_fichier_csv)
             messagebox.showinfo("Rapport LaTeX", f"Le rapport LaTeX '{fichier_latex}' a été généré avec succès.")
         else:
             messagebox.showwarning("Choix invalide", "Veuillez choisir un format.")

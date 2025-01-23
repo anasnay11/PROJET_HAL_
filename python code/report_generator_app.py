@@ -21,6 +21,7 @@ def create_report_folder():
         os.makedirs(report_directory)
 
     return report_directory
+
 def generate_pdf_report(output_path, nom_fichier_csv):
     report_directory = create_report_folder()
     output_path = os.path.join(report_directory, f"{nom_fichier_csv}.pdf")
