@@ -272,21 +272,21 @@ def generer_rapport():
         format_choisi = choix_format.get()
         nom_fichier_csv = os.path.basename(current_csv_file).replace(".csv", "")
 
-        # Générer le rapport selon le choix
         if format_choisi == "PDF":
-            fichier_pdf = f"{nom_fichier_csv}.pdf"
-            generate_pdf_report(nom_fichier_csv)
-            messagebox.showinfo("Rapport PDF", f"Le rapport PDF '{fichier_pdf}' a été généré avec succès.")
+            report_directory = os.path.join(os.path.dirname(__file__), 'rapports')
+            if not os.path.exists(report_directory):
+                os.makedirs(report_directory)
+            output_path = os.path.join(report_directory, f"{nom_fichier_csv}.pdf")
+            generate_pdf_report(output_path, nom_fichier_csv)
+            messagebox.showinfo("Rapport PDF", f"Le rapport PDF a été généré avec succès dans : {output_path}")
         elif format_choisi == "LaTeX":
-            fichier_latex = f"{nom_fichier_csv}.tex"
-            generate_latex_report(nom_fichier_csv)
-            messagebox.showinfo("Rapport LaTeX", f"Le rapport LaTeX '{fichier_latex}' a été généré avec succès.")
+             generate_latex_report(nom_fichier_csv)
+             messagebox.showinfo("Rapport LaTeX", f"Le rapport LaTeX a été généré avec succès.")
         else:
-            messagebox.showwarning("Choix invalide", "Veuillez choisir un format.")
-        
-        # Fermer la fenêtre après validation
+            messagebox.showerror("Erreur", "Veuillez choisir un format valide.")
         rapport_window.destroy()
 
+        
     # Bouton de validation
     btn_valider = tk.Button(rapport_window, text="Valider", command=valider_choix)
     btn_valider.pack(pady=10)
