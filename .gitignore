@@ -1,1 +1,47 @@
-"# Fichiers g‚n‚r‚s\n__pycache__/\n*.pyc\n\n# Dossiers sp‚cifiques\nhtml/\npng/\nrapports/\nextraction/\n\n# Fichiers journaux\n*.log\n\n# Fichiers sp‚cifiques au systŠme\n.DS_Store\nThumbs.db\n\n# Fichiers de configuration locale\n.env" 
+# Dossiers de résultats/tests (à ignorer)
+extraction/
+html/
+png/
+rapports/
+
+# Fichiers Python automatiques
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Fichiers de verrouillage LibreOffice/Excel
+.~lock.*#
+*.tmp
+~$*
+
+# Environnements virtuels Python
+venv/
+env/
+.venv/
+ENV/
+
+# Fichiers de sortie générés
+output/
+*.xlsx
+*.pdf
+*.log
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Configuration locale
+.env
+config.local
+
+# Fichiers IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Fichiers temporaires
+*.temp
+*.bak
