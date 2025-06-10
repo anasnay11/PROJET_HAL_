@@ -1,9 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Thu Dec  5 16:38:57 2024
-
-
-"""
 
 # dashboard_generator.py
 
@@ -29,6 +24,9 @@ def create_dashboard():
         <iframe src="top_authors.html"></iframe>
         <iframe src="structures_stacked.html"></iframe>
         <iframe src="publication_trends.html"></iframe>
+        <iframe src="employer_distribution.html"></iframe>
+        <iframe src="theses_hdr_by_year.html"></iframe>
+        <iframe src="theses_keywords_wordcloud.html"></iframe>
     </body>
     </html>
     """

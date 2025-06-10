@@ -49,22 +49,16 @@ Cet outil vise a faciliter l’exploration et l’exploitation des donnees de re
  ## Installation
 ### Pré-requis
 - Python 3.8 ou une version ultérieure.
-- Un environnement virtuel (recommandé).
+- Un environnement virtuel (recommandé, mais pas obligatoire).
 
 ### Étapes d'installation
-1. Clonez ce dépôt :
+1. Clonez ce dépôt : 
    ```bash
-   git clone https://github.com/ChancellaLITOKO/PROJET_HAL_.git
+   git clone https://github.com/anasnay11/PROJET_HAL_.git
    cd PROJET_HAL_
    ```
 
-2. Créez un environnement virtuel :
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # Sur Windows : venv\Scripts\activate
-   ```
-
-3. Installez les dépendances :
+2. Installez les dépendances :
    ```bash
    pip install -r requirements.txt
    ```
@@ -84,4 +78,3 @@ Cet outil vise a faciliter l’exploration et l’exploitation des donnees de re
 
   ### Auteurs:
   - Anas NAY
-  - Chancella Litoko

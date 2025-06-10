@@ -1,3 +1,7 @@
+# -*- coding: utf-8 -*-
+
+# app.py
+
 import tkinter as tk
 from tkinter import filedialog, messagebox, Toplevel, Listbox, MULTIPLE, ttk
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -15,6 +19,8 @@ from graphics import (
     plot_publications_by_author,
     plot_structures_stacked,
     plot_publications_trends,
+    plot_employer_distribution,
+    plot_theses_keywords_wordcloud,
 )
 from dashboard_generator import create_dashboard
 from report_generator_app import generate_pdf_report, generate_latex_report
@@ -41,7 +47,7 @@ def charger_csv():
     if fichier_csv:
         try:
             global scientists_df, fichier_charge
-            scientists_df = pd.read_csv(fichier_csv)
+            scientists_df = pd.read_csv(fichier_csv, encoding='utf-8-sig')
             fichier_charge = True
             messagebox.showinfo("Succès", f"Fichier chargé : {fichier_csv}")
             afficher_boutons_options()
@@ -173,7 +179,7 @@ def extraction_data(periode, types, domaines):
         total_rows = len(scientists_df)
         progress_bar["maximum"] = total_rows
 
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=100) as executor:
             futures = {
                 executor.submit(get_hal_data, row['nom'], row['prenom'], period=periode, domain_filter=domaines, type_filter=types): index 
                 for index, row in scientists_df.iterrows()
@@ -232,6 +238,9 @@ def generate_graphs_thread():
         plot_publications_by_author(current_csv_file, output_html="html/top_authors.html", output_png="png/top_authors.png")
         plot_structures_stacked(current_csv_file, output_html="html/structures_stacked.html", output_png="png/structures_stacked.png")
         plot_publications_trends(current_csv_file, output_html="html/publication_trends.html", output_png="png/publication_trends.png")
+        plot_employer_distribution(current_csv_file, output_html="html/employer_distribution.html", output_png="png/employer_distribution.png")
+        plot_employer_distribution(current_csv_file, output_html="html/theses_hdr_by_year.html", output_png="png/theses_hdr_by_year.png")
+        plot_theses_keywords_wordcloud(current_csv_file, output_html="html/theses_keywords_wordcloud.html", output_png="png/theses_keywords_wordcloud.png")
 
         global dashboard_file
         dashboard_file = create_dashboard()

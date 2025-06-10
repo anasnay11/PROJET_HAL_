@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 # main.py
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -14,13 +16,15 @@ from graphics import (
     plot_publications_by_author,
     plot_structures_stacked,
     plot_publications_trends,
+    plot_employer_distribution, 
+    plot_theses_hdr_by_year, 
+    plot_theses_keywords_wordcloud,
 )
 from dashboard_generator import create_dashboard
 from report_generator_main import generate_pdf_report, generate_latex_report
 import webbrowser
 import os
 from tqdm import tqdm
-
 
 def list_csv_files():
     current_directory = os.path.dirname(os.path.abspath(__file__))
@@ -74,7 +78,7 @@ def main():
     # Chargement des données scientifiques
     try:
         csv_file_path = get_user_selected_csv()
-        scientists_df = pd.read_csv(csv_file_path)
+        scientists_df = pd.read_csv(csv_file_path, encoding='utf-8-sig')
     except FileNotFoundError as e:
         print(e)
         exit(1)
@@ -133,7 +137,7 @@ def main():
     pbar = tqdm(total=len(scientists_df), desc="Extraction en cours")
 
     results = []
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    with ThreadPoolExecutor(max_workers=100) as executor:
         future_to_row = {
             executor.submit(fetch_data, row): row for index, row in scientists_df.iterrows()
         }
@@ -164,7 +168,10 @@ def main():
             plot_publications_by_author(output_path, output_html="html/top_authors.html", output_png="png/top_authors.png")
             plot_structures_stacked(output_path, output_html="html/structures_stacked.html", output_png="png/structures_stacked.png")
             plot_publications_trends(output_path, output_html="html/publication_trends.html", output_png="png/publication_trends.png")
-
+            plot_employer_distribution(output_path, output_html="html/employer_distribution.html", output_png="png/employer_distribution.png")
+            plot_theses_hdr_by_year(output_path, output_html="html/theses_hdr_by_year.html", output_png="png/theses_hdr_by_year.png")
+            plot_theses_keywords_wordcloud(output_path, output_html="html/theses_keywords_wordcloud.html", output_png="png/theses_keywords_wordcloud.png")
+  
             dashboard_file = create_dashboard()
             webbrowser.open("file://" + os.path.realpath(dashboard_file))
         except Exception as e:
