@@ -6,15 +6,16 @@ import requests
 import pandas as pd
 from Levenshtein import distance as levenshtein_distance
 from mapping import map_doc_type, map_domain, get_domain_code, get_type_code
+from config import DEFAULT_THRESHOLD
 
-def is_same_author_levenshtein(nom_csv, prenom_csv, nom_hal, prenom_hal, threshold=2):
+def is_same_author_levenshtein(nom_csv, prenom_csv, nom_hal, prenom_hal, threshold=DEFAULT_THRESHOLD):
     """
     Directly compare a CSV author with an author found in HAL
     
     Args:
         nom_csv, prenom_csv: last name and first name from CSV file (ORIGINAL)
         nom_hal, prenom_hal: last name and first name found in HAL results
-        threshold: acceptable distance threshold (default: 2)
+        threshold: acceptable distance threshold (configurable)
     
     Returns:
         bool: True if authors match
@@ -29,7 +30,7 @@ def is_same_author_levenshtein(nom_csv, prenom_csv, nom_hal, prenom_hal, thresho
     # Match if both distances are acceptable
     return dist_nom <= threshold and dist_prenom <= threshold
 
-def extract_author_id_simple(nom, prenom, threshold=2):
+def extract_author_id_simple(nom, prenom, threshold=DEFAULT_THRESHOLD):
     """
     Extract HAL identifier with verification
     
@@ -39,6 +40,11 @@ def extract_author_id_simple(nom, prenom, threshold=2):
     - Compound last name or first name 
     - Partial IDs (e.g: last name only)
     - Short formats (e.g: initials)
+    
+    Args:
+        nom (str): Nom de famille
+        prenom (str): Prénom
+        threshold (int): Seuil de distance Levenshtein acceptable
     
     Returns:
         str: authIdHal_s if found and verified, otherwise "Id non disponible"
@@ -271,7 +277,7 @@ def extract_author_id_simple(nom, prenom, threshold=2):
                 prenom_nom_compact = prenom_clean.replace(' ', '').replace('-', '') + nom_clean.replace(' ', '').replace('-', '')
                 auth_id_compact = auth_id_lower.replace('-', '')
                 
-                # Distance test on compact versions
+                # Distance test on compact versions (utilise le threshold configurable + 1 pour la fallback)
                 if (levenshtein_distance(nom_prenom_compact, auth_id_compact) <= threshold + 1 or
                     levenshtein_distance(prenom_nom_compact, auth_id_compact) <= threshold + 1):
                     partial_match_found = True
@@ -288,9 +294,20 @@ def extract_author_id_simple(nom, prenom, threshold=2):
     except Exception :
         return "Id non disponible"
 
-def get_hal_data(nom, prenom, period=None, domain_filter=None, type_filter=None, threshold=2):
+def get_hal_data(nom, prenom, period=None, domain_filter=None, type_filter=None, threshold=DEFAULT_THRESHOLD):
     """
     Main corrected function with separate ID extraction
+    
+    Args:
+        nom (str): Nom de famille
+        prenom (str): Prénom
+        period (str): Période au format "YYYY-YYYY"
+        domain_filter (list): Liste des domaines à filtrer
+        type_filter (list): Liste des types de documents à filtrer
+        threshold (int): Seuil de distance Levenshtein acceptable
+    
+    Returns:
+        pd.DataFrame: DataFrame contenant les publications trouvées
     """
     
     # ==============================

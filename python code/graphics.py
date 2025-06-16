@@ -6,19 +6,13 @@ import pandas as pd
 import plotly.express as px
 import os
 import threading
-from wordcloud import WordCloud
 import plotly.graph_objects as go
-import numpy as np
-from PIL import Image
-import networkx as nx
-import matplotlib.pyplot as plt
-import ast
 
-# Créer un verrou global pour la génération de graphiques
+# Create global lock for graph generation
 graph_generation_lock = threading.Lock()
 
-# Fonction pour créer les dossier 'png' et 'html'
 def create_directories():
+    """Create 'png' and 'html' directories"""
     base_path = os.path.dirname(os.path.abspath(__file__))
     directories = ['png', 'html']
     for directory in directories:
@@ -26,33 +20,38 @@ def create_directories():
         if not os.path.exists(path):
             os.makedirs(path)
 
-# Analyse des données
 def analyze_data(filename):
     """
-    Effectue une analyse complète des données :
-    - Mots-clés les plus fréquents
-    - Répartition des types de documents
-    - Publications par auteur (top 10)
-    - Publications par structure de recherche (top 10)
-    - Publications par année (distribution complète)
-    - Nombre moyen d'auteurs par publication
-    - Nombre moyen de mots-clés par publication
-    - Nombre de publications total
+    Performs complete data analysis including:
+    - Most frequent keywords
+    - Document type distribution
+    - Publications per author (top 10)
+    - Publications per research structure (top 10)  
+    - Publications per year (complete distribution)
+    - Average number of authors per publication
+    - Average number of keywords per publication
+    - Total number of publications
+    
+    Args:
+        filename (str): Path to CSV file to analyze
+        
+    Returns:
+        dict: Dictionary containing all analysis results
     """
     df = pd.read_csv(filename)
 
-    # Assurer que les colonnes utilisées existent bien dans le fichier
+    # Ensure that required columns exist in the file
     required_columns = ['Nom', 'Prenom', 'IdHAL des auteurs de la publication', 'Docid', 'Titre',
                         'Année de Publication', 'Type de Document', 'Mots-clés', 'Laboratoire de Recherche']
 
     for col in required_columns:
         if col not in df.columns:
-            raise ValueError(f"La colonne '{col}' est manquante dans le fichier.")
+            raise ValueError(f"Column '{col}' is missing from the file.")
 
-    # Mots-clés les plus fréquents (nettoyage préalable)
+    # Most frequent keywords (with preprocessing)
     keyword_counts = (
         df['Mots-clés'].dropna()
-        .str.replace(r"[^\w\s,]", "", regex=True)  # Suppression des caractères spéciaux
+        .str.replace(r"[^\w\s,]", "", regex=True)  # Remove special characters
         .str.split(',')
         .explode()
         .str.strip()
@@ -60,28 +59,28 @@ def analyze_data(filename):
         .head(10)
     )
 
-    # Répartition des types de documents
+    # Document type distribution
     doc_type_counts = df['Type de Document'].value_counts()
 
-    # Publications par auteur (basé sur les combinaisons Nom + Prénom)
+    # Publications per author (based on Name + First name combinations)
     author_counts = df.groupby(['Nom', 'Prenom']).size().sort_values(ascending=False).head(10)
 
-    # Publications par structure de recherche
+    # Publications per research structure
     structure_counts = df['Laboratoire de Recherche'].dropna().str.strip().value_counts().head(10)
 
-    # Distribution des publications par année
+    # Publication distribution per year
     year_counts = df['Année de Publication'].value_counts().sort_index()
 
-    # Nombre moyen d'auteurs par publication
+    # Average number of authors per publication
     avg_authors_per_pub = df['IdHAL des auteurs de la publication'].apply(lambda x: len(eval(x)) if pd.notnull(x) else 0).mean()
 
-    # Nombre moyen de mots-clés par publication
+    # Average number of keywords per publication
     avg_keywords_per_pub = df['Mots-clés'].apply(lambda x: len(eval(x)) if pd.notnull(x) else 0).mean()
 
-    # Nombre total de publications
+    # Total number of publications
     total_publications = len(df)
 
-    # Retourner tous les résultats sous forme de dictionnaire
+    # Return all results as dictionary
     return {
         "keywords": keyword_counts,
         "doc_types": doc_type_counts,
@@ -93,27 +92,26 @@ def analyze_data(filename):
         "total_publications": total_publications
     }
 
-# Visualisation : Histogramme par année
 def plot_publications_by_year(filename, output_html="html/pubs_by_year.html", output_png="png/pubs_by_year.png"):
     """
-    Affiche un histogramme interactif des publications par année.
-    Sauvegarde le graphique en HTML.
+    Display an interactive histogram of publications by year.
+    Save the graph in HTML format.
     """
     
     with graph_generation_lock:
         
-        # Créer les dossiers pour ranger les fichiers html et png
+        # Create directories to store html and png files
         create_directories()
         
-        # Charger les données
+        # Load data
         df = pd.read_csv(filename)
         
-        # Vérifier la colonne "Année de Publication"
+        # Check "Publication Year" column
         year_counts = df['Année de Publication'].dropna().value_counts().reset_index()
         year_counts.columns = ['Année', 'Nombre de publications']
-        year_counts = year_counts.sort_values(by='Année')  # Trier par année
+        year_counts = year_counts.sort_values(by='Année')  # Sort by year
     
-        # Créer le graphique interactif
+        # Create interactive graph
         fig = px.bar(
             year_counts,
             x='Année',
@@ -124,19 +122,18 @@ def plot_publications_by_year(filename, output_html="html/pubs_by_year.html", ou
             color_continuous_scale='Viridis'
         )
     
-        # Sauvegarder le graphique
+        # Save graph
         fig.write_html(output_html)
         fig.write_image(output_png)
 
 
-# Visualisation : Types de documents
 def plot_document_types(filename, output_html="html/type_distribution.html", output_png="png/type_distribution.png"):
     """
-    Affiche un graphique circulaire interactif des types de documents.
+    Display an interactive pie chart of document types.
     """
     with graph_generation_lock:
     
-        # Créer les dossiers pour ranger les fichiers html et png
+        # Create directories to store html and png files
         create_directories()
         
         df = pd.read_csv(filename)
@@ -154,15 +151,14 @@ def plot_document_types(filename, output_html="html/type_distribution.html", out
         fig.write_image(output_png)
 
 
-# Visualisation : Mots-clés
 def plot_keywords(filename, output_html="html/keywords_distribution.html", output_png="png/keywords_distribution.png"):
     """
-    Affiche un barplot horizontal interactif des mots-clés les plus fréquents.
+    Display an interactive horizontal bar plot of most frequent keywords.
     """
     
     with graph_generation_lock:
         
-        # Créer les dossiers pour ranger les fichiers html et png
+        # Create directories to store html and png files
         create_directories()
         
         df = pd.read_csv(filename)
@@ -172,7 +168,7 @@ def plot_keywords(filename, output_html="html/keywords_distribution.html", outpu
             .str.split(',')
             .explode()
             .str.strip()
-            .replace('[]', pd.NA)  # Exclure les mots-clés vides
+            .replace('[]', pd.NA)  # Exclude empty keywords
             .dropna()
             .value_counts()
             .head(10)
@@ -193,15 +189,14 @@ def plot_keywords(filename, output_html="html/keywords_distribution.html", outpu
         fig.write_image(output_png)
 
 
-# Visualisation : Domaines
 def plot_top_domains(filename, output_html="html/domain_distribution.html", output_png="png/domain_distribution.png"):
     """
-    Affiche un histogramme interactif des domaines les plus fréquents.
+    Display an interactive histogram of most frequent domains.
     """
     
     with graph_generation_lock:
         
-        # Créer les dossiers pour ranger les fichiers html et png
+        # Create directories to store html and png files
         create_directories()
         
         df = pd.read_csv(filename)
@@ -211,7 +206,7 @@ def plot_top_domains(filename, output_html="html/domain_distribution.html", outp
             .str.split(',')
             .explode()
             .str.strip()
-            .replace('Domaine non défini', pd.NA)  # Exclure les domaines non définis
+            .replace('Domaine non défini', pd.NA)  # Exclude undefined domains
             .dropna()
             .value_counts()
             .head(10)
@@ -231,15 +226,14 @@ def plot_top_domains(filename, output_html="html/domain_distribution.html", outp
         fig.write_image(output_png)
 
 
-# Visualisation : Auteurs prolifiques
 def plot_publications_by_author(filename, output_html="html/top_authors.html", output_png="png/top_authors.png"):
     """
-    Affiche un histogramme interactif des auteurs les plus prolifiques.
+    Display an interactive histogram of most prolific authors.
     """
     
     with graph_generation_lock:
         
-        # Créer les dossiers pour ranger les fichiers html et png
+        # Create directories to store html and png files
         create_directories()
         
         df = pd.read_csv(filename)
@@ -258,20 +252,19 @@ def plot_publications_by_author(filename, output_html="html/top_authors.html", o
         fig.write_image(output_png)
 
 
-# Visualisation : Structures prolifiques
 def plot_structures_stacked(filename, output_html="html/structures_stacked.html", output_png="png/structures_stacked.png"):
     """
-    Affiche un graphique en barres empilées des publications par structure et par année.
+    Display a stacked bar chart of publications by structure and year.
     """
     
     with graph_generation_lock:
         
-        # Créer les dossiers pour ranger les fichiers html et png
+        # Create directories to store html and png files
         create_directories()
         
         df = pd.read_csv(filename)
         
-        # Exclure les valeurs 'Non disponible'
+        # Exclude 'Not available' values
         df = df[df['Laboratoire de Recherche'] != 'Non disponible']
         
         grouped = df.groupby(['Laboratoire de Recherche', 'Année de Publication']).size().reset_index(name='Nombre de publications')
@@ -291,15 +284,14 @@ def plot_structures_stacked(filename, output_html="html/structures_stacked.html"
         fig.write_image(output_png)
 
     
-# Tendance des publications
 def plot_publications_trends(filename, output_html="html/publication_trends.html", output_png="png/publication_trends.png"):
     """
-    Affiche un graphique linéaire interactif des tendances des publications par année.
+    Display an interactive line chart of publication trends by year.
     """
     
     with graph_generation_lock:
         
-        # Créer les dossiers pour ranger les fichiers html et png
+        # Create directories to store html and png files
         create_directories()
         
         df = pd.read_csv(filename)
@@ -316,17 +308,16 @@ def plot_publications_trends(filename, output_html="html/publication_trends.html
         fig.write_html(output_html)
         fig.write_image(output_png)
         
-# Répartition par employeur
 def plot_employer_distribution(filename, output_html="html/employer_distribution.html", output_png="png/employer_distribution.png"):
     """
-    Affiche un graphique en barres empilées des publications par employeurs (laboratoires).
+    Display a stacked bar chart of publications by employers (laboratories).
     """
     
     with graph_generation_lock:
     
         df = pd.read_csv(filename)
         
-        # Nettoyer les noms d’employeurs
+        # Clean employer names
         employer_counts = (
             df['Laboratoire de Recherche']
             .dropna()
@@ -337,7 +328,7 @@ def plot_employer_distribution(filename, output_html="html/employer_distribution
             .head(15)
         )
     
-        # Reformater pour plotly
+        # Reformat for plotly
         df_plot = employer_counts.reset_index()
         df_plot.columns = ["Employeur", "Nombre de publications"]
     
@@ -351,23 +342,22 @@ def plot_employer_distribution(filename, output_html="html/employer_distribution
         fig.write_html(output_html)
         fig.write_image(output_png)
 
-# Thèses et HDR par année
 def plot_theses_hdr_by_year(filename, output_html="html/theses_hdr_by_year.html", output_png="png/theses_hdr_by_year.png"):
     """
-    Affiche un graphique en barres des thèses et HDR soutenues par année.
+    Display a bar chart of theses and HDR defended by year.
     """
     
     with graph_generation_lock:
         
-        # Créer les dossiers pour ranger les fichiers html et png
+        # Create directories to store html and png files
         create_directories()
         
         df = pd.read_csv(filename)
 
-        # Filtrer les thèses et HDR (non sensible à la casse, ignore les valeurs manquantes)
+        # Filter theses and HDR (case insensitive, ignore missing values)
         theses_hdr = df[df['Type de Document'].str.contains("Thèse|HDR", case=False, na=False)]
         
-        # Compter par année
+        # Count by year
         year_counts = theses_hdr['Année de Publication'].dropna().value_counts().sort_index().reset_index()
         year_counts.columns = ['Année', 'Nombre de thèses et HDR']
 
@@ -382,27 +372,29 @@ def plot_theses_hdr_by_year(filename, output_html="html/theses_hdr_by_year.html"
         fig.write_html(output_html)
         fig.write_image(output_png)
 
-# Nuage de mots-clés des thèses/HDR
 def plot_theses_keywords_wordcloud(filename, 
                                  output_html="html/theses_keywords_wordcloud.html",
                                  output_png="png/theses_keywords_wordcloud.png",
-                                 max_words=50):
+                                 max_words=15):
     """
-    Génère un nuage de mots-clés lisible avec :
-    - Algorithme de placement intelligent pour éviter les chevauchements
-    - Couleurs harmonieuses et contrastées
-    - Tailles de police optimisées
-    - Légende interactive
+    Generate a centered vertical list of top 15 thesis/HDR keywords
+    with visual hierarchy by color and size.
+    
+    Args:
+        filename (str): Path to CSV file
+        output_html (str): HTML output path
+        output_png (str): PNG output path
+        max_words (int): Maximum number of words to display
     """
     
     with graph_generation_lock:
         create_directories()
         
-        # Charger et préparer les données
+        # Load and prepare data
         df = pd.read_csv(filename)
         theses_hdr = df[df['Type de Document'].str.contains("Thèse|HDR", case=False, na=False)]
         
-        # Nettoyage approfondi
+        # Thorough cleaning
         keywords = (
             theses_hdr['Mots-clés']
             .dropna()
@@ -413,7 +405,7 @@ def plot_theses_keywords_wordcloud(filename,
             .str.lower()
         )
         
-        # Filtrage des mots non pertinents
+        # Filter irrelevant words
         stopwords = {
             'de', 'la', 'le', 'et', 'les', 'des', 'en', 'du', 'à', 'au', 'aux',
             'pour', 'dans', 'sur', 'avec', 'est', 'son', 'ses', 'une', 'un',
@@ -421,166 +413,134 @@ def plot_theses_keywords_wordcloud(filename,
         }
         keywords = keywords[~keywords.isin(stopwords) & (keywords.str.len() > 3)]
         
-        # Sélection des top mots
+        # Select top words
         word_counts = keywords.value_counts()
         top_words = word_counts.head(max_words)
         
-        # Version PNG avec WordCloud
-        wc = WordCloud(
-            width=1800,
-            height=1000,
-            background_color='white',
-            colormap='viridis',  
-            max_words=max_words,
-            collocations=False,
-            min_font_size=12,
-            max_font_size=150,
-            random_state=42,
-            prefer_horizontal=0.9,  
-            relative_scaling=0.5    
-        ).generate_from_frequencies(top_words.to_dict())
-        
-        wc.to_file(output_png)
-        
-        # Version HTML avec affichage ligne par ligne selon la fréquence
-        fig = go.Figure()
-        
-        # Paramètres d'espacement selon le nombre de mots
-        if max_words <= 25:
-            row_height = 40
-            font_size_base = 16
-            font_size_range = 20
-        elif max_words <= 50:
-            row_height = 30
-            font_size_base = 12
-            font_size_range = 15
+        if len(top_words) == 0:
+            # Create empty graph if no keywords
+            fig = go.Figure()
+            fig.add_annotation(
+                text="Aucun mot-clé trouvé dans les thèses/HDR",
+                x=0.5, y=0.5,
+                xref="paper", yref="paper",
+                showarrow=False,
+                font=dict(size=20, color='gray')
+            )
+            fig.update_layout(
+                title="Mots-clés des thèses et HDR",
+                xaxis=dict(visible=False),
+                yaxis=dict(visible=False)
+            )
         else:
-            row_height = 25
-            font_size_base = 10
-            font_size_range = 12
-        
-        positions = []
-        
-        # Placement ligne par ligne 
-        for i, (word, freq) in enumerate(top_words.items()):
-            # Chaque mot sur sa propre ligne, centré horizontalement
-            x = 0  
-            y = (len(top_words) - i - 1) * row_height  
+            # Create centered list visualization
+            fig = go.Figure()
             
-            # Léger décalage aléatoire pour éviter l'alignement parfait
-            x += np.random.uniform(-15, 15)
+            # Size and spacing parameters
+            max_font_size = 28
+            min_font_size = 14
+            line_spacing = 40  # Spacing between lines
             
-            positions.append((x, y))
-        
-        # Palette de couleurs harmonieuse
-        colors = [
-            '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
-            '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
-            '#aec7e8', '#ffbb78', '#98df8a', '#ff9896', '#c5b0d5'
-        ]
-        
-        # Ajouter les mots avec numérotation et dégradé de couleurs
-        for i, ((word, freq), (x, y)) in enumerate(zip(top_words.items(), positions)):
-            # Taille proportionnelle à la fréquence mais dans une plage restreinte
-            font_size = font_size_base + (freq / top_words.max()) * font_size_range
+            # Calculate proportional font sizes
+            max_freq = top_words.max()
+            min_freq = top_words.min()
             
-            # Dégradé de couleur du rouge (top) au bleu (bottom)
-            if i < 5:
-                color = '#d32f2f'  
-                weight = 'bold'
-            elif i < 15:
-                color = '#f57c00'  
-                weight = 'bold'
-            elif i < 30:
-                color = '#388e3c'  
-                weight = 'normal'
-            else:
-                color = '#1976d2'  
-                weight = 'normal'
+            for i, (word, freq) in enumerate(top_words.items()):
+                # Y position (from top to bottom)
+                y_position = (len(top_words) - i - 1) * line_spacing
+                
+                # Size proportional to frequency
+                if max_freq == min_freq:
+                    font_size = max_font_size
+                else:
+                    font_size = min_font_size + (freq - min_freq) / (max_freq - min_freq) * (max_font_size - min_font_size)
+                
+                # Color by rank
+                if i < 3:  # Top 1-3
+                    color = '#E53E3E'  # Red
+                    weight = 'bold'
+                elif i < 6:  # Top 4-6
+                    color = '#DD6B20'  # Orange
+                    weight = 'bold'
+                elif i < 10:  # Top 7-10
+                    color = '#38A169'  # Green
+                    weight = 'normal'
+                else:  # Top 11+
+                    color = '#805AD5'  # Purple
+                    weight = 'normal'
+                
+                # Add word to graph (centered on x=0)
+                fig.add_trace(go.Scatter(
+                    x=[0],
+                    y=[y_position],
+                    text=[word.capitalize()],
+                    mode="text",
+                    textfont=dict(
+                        size=font_size,
+                        color=color,
+                        family="Arial Black" if weight == 'bold' else "Arial"
+                    ),
+                    hovertemplate=f"<b>#{i+1} - {word.capitalize()}</b><br>" +
+                                f"Fréquence: {freq}<br>" +
+                                f"Pourcentage: {freq/word_counts.sum()*100:.1f}%<extra></extra>",
+                    showlegend=False,
+                    name=word
+                ))
             
-            # Opacité décroissante
-            opacity = max(0.7, 1 - (i / len(top_words)) * 0.3)
+            # Calculate display limits
+            total_height = len(top_words) * line_spacing
+            y_range = [-line_spacing, total_height]
+            x_range = [-300, 300]  # Fixed centered width
             
-            fig.add_trace(go.Scatter(
-                x=[x],
-                y=[y],
-                text=[f"#{i+1} {word.capitalize()}"],
-                mode="text",
-                textfont=dict(
-                    size=font_size,
-                    color=color,
-                    family="Arial",
-                    weight=weight
+            # Layout
+            fig.update_layout(
+                title={
+                    'text': f"Top {len(top_words)} des mots-clés des thèses et HDR<br><sub style='font-size:14px'>Classement par fréquence d'apparition</sub>",
+                    'x': 0.5,
+                    'xanchor': 'center',
+                    'font': {'size': 24, 'color': '#2c3e50', 'family': 'Arial Black'}
+                },
+                xaxis=dict(
+                    visible=False, 
+                    range=x_range
                 ),
-                opacity=opacity,
-                hovertemplate=f"<b>#{i+1} - {word.capitalize()}</b><br>" +
-                            f"Fréquence: {freq}<br>" +
-                            f"Pourcentage: {freq/word_counts.sum()*100:.1f}%<extra></extra>",
-                showlegend=False,
-                name=word
-            ))
+                yaxis=dict(
+                    visible=False, 
+                    range=y_range
+                ),
+                plot_bgcolor='#f8fafc',
+                paper_bgcolor='white',
+                margin=dict(l=50, r=50, t=120, b=80),
+                height=max(600, total_height + 200),
+                width=800,
+                annotations=[
+                    # Instructions at bottom
+                    dict(
+                        text="Survolez les mots pour voir les détails • Taille proportionnelle à la fréquence",
+                        x=0.5, y=-0.08,
+                        xref="paper", yref="paper",
+                        showarrow=False,
+                        font=dict(size=12, color='#64748b')
+                    ),
+                    # Color legend at top right
+                    dict(
+                        text="<b>Code couleur :</b><br>" +
+                             "Top 1-3 (Rouge)<br>" +
+                             "Top 4-6 (Orange)<br>" +
+                             "Top 7-10 (Vert)<br>" +
+                             "Top 11+ (Violet)",
+                        x=0.98, y=0.85,
+                        xref="paper", yref="paper",
+                        showarrow=False,
+                        align="right",
+                        bgcolor="rgba(255,255,255,0.95)",
+                        bordercolor="#e2e8f0",
+                        borderwidth=1,
+                        font=dict(size=11, color='#374151')
+                    )
+                ]
+            )
         
-        # Dimensions adaptées pour l'affichage vertical
-        total_height = len(top_words) * row_height + 100
-        if max_words <= 25:
-            width = 800
-        elif max_words <= 50:
-            width = 1000
-        else:
-            width = 1200
-        
-        # Calcul des limites pour centrer l'affichage
-        y_min = -50
-        y_max = (len(top_words) - 1) * row_height + 50
-        
-        # Mise en page pour affichage vertical
-        fig.update_layout(
-            title={
-                'text': f"Top {max_words} des mots-clés<br><sub>Classement des thèses et HDR</sub>",
-                'x': 0.5,
-                'xanchor': 'center',
-                'font': {'size': 18 if max_words > 50 else 22, 'color': '#2c3e50'}
-            },
-            xaxis=dict(
-                visible=False, 
-                range=[-200, 200]
-            ),
-            yaxis=dict(
-                visible=False, 
-                range=[y_min, y_max]
-            ),
-            plot_bgcolor='#fafafa',
-            paper_bgcolor='white',
-            margin=dict(l=20, r=20, t=80, b=20),
-            height=min(total_height, 2000),  
-            width=width,
-            annotations=[
-                dict(
-                    text="Affichage par rang de classement • Survolez pour plus de détails",
-                    x=0.5, y=-0.02,
-                    xref="paper", yref="paper",
-                    showarrow=False,
-                    font=dict(size=10 if max_words > 50 else 12, color='#7f8c8d')
-                )
-            ]
-        )
-        
-        # Ajouter une légende des couleurs
-        fig.add_annotation(
-            text="<b>Code couleur:</b><br>" +
-                 "Top 1-5 (Rouge)<br>" +
-                 "Top 6-15 (Orange)<br>" +
-                 "Top 16-30 (Vert)<br>" +
-                 "Top 31+ (Bleu)",
-            x=0.02, y=0.98,
-            xref="paper", yref="paper",
-            showarrow=False,
-            align="left",
-            bgcolor="rgba(255,255,255,0.9)",
-            bordercolor="#bdc3c7",
-            borderwidth=1,
-            font=dict(size=9 if max_words > 50 else 10, color='#2c3e50')
-        )
-        
+        # Save files
         fig.write_html(output_html)
-
+        fig.write_image(output_png)

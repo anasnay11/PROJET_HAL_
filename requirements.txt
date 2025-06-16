@@ -1,11 +1,14 @@
-fpdf==1.7.2
-matplotlib==3.8.4
-networkx==3.2.1
-numpy==1.26.0
-pandas==2.3.0
-Pillow==11.2.1
-plotly==5.22.0
-python_Levenshtein==0.27.1
-requests==2.32.4
-tqdm==4.66.4
-wordcloud==1.9.3
+
+# Requirements for HAL Data Extraction and Analysis Tool
+
+# Data manipulation and analysis
+pandas>=1.5.0
+
+# HTTP requests for HAL API calls
+requests>=2.28.0
+
+# String similarity calculations for author name matching
+python-Levenshtein>=0.20.0
+
+# Interactive data visualizations and reporting
+plotly>=5.15.0
