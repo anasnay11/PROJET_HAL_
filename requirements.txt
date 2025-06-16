@@ -12,3 +12,6 @@ python-Levenshtein>=0.20.0
 
 # Interactive data visualizations and reporting
 plotly>=5.15.0
+
+# Static image export for Plotly graphs (PNG, PDF, SVG)
+kaleido>=0.2.1
