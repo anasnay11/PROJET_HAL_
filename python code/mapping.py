@@ -107,7 +107,7 @@ def get_domain_code(domain_name):
     reverse_mapping = {v.lower(): k for k, v in domain_mapping.items()}
     return reverse_mapping.get(domain_name.lower(), None)
 
-# Type de documents
+# Type de documents avec codes HDR étendus
 
 type_mapping = {
     "ART": "Article de journal",
@@ -116,7 +116,8 @@ type_mapping = {
     "COUV": "Chapitre d'ouvrage",
     "OUV": "Ouvrage",
     "THESE": "Thèse",
-    "HDR": "Habilitation à diriger des recherches",
+    "THESE_DOCTORANT": "Thèse (Doctorant)",
+    "THESE_HDR": "Thèse (HDR)",  
     "REPORT": "Rapport",
     "UNDEFINED": "Non défini",
     "SYNTHESE": "Synthèse",
@@ -134,7 +135,17 @@ type_mapping = {
 
 # Fonctions de mapping pour les types de documents et les domaines
 def map_doc_type(doc_type):
-    return type_mapping.get(doc_type, "Type non défini")
+    """
+    🔧 ENHANCED: Map document type with debug for unknown types
+    """
+    if not doc_type:
+        return "Type non défini"
+    
+    mapped = type_mapping.get(doc_type, None)
+    if mapped is None:
+        return f"Type non défini (Code: {doc_type})"
+    
+    return mapped
 
 def list_types():
     """
@@ -145,3 +156,104 @@ def list_types():
 def get_type_code(type_name):
     reverse_mapping = {v.lower(): k for k, v in type_mapping.items()}
     return reverse_mapping.get(type_name.lower(), None)
+
+def get_linked_types(type_codes):
+    """
+    🔧 ENHANCED: Gère les nouveaux types de thèses avec granularité et codes HDR étendus
+    
+    Args:
+        type_codes (list): Liste des codes de types sélectionnés
+    
+    Returns:
+        list: Liste des codes HAL à utiliser dans la requête
+    """
+    if not type_codes:
+        return type_codes
+    
+    # Créer une copie pour éviter de modifier la liste originale
+    hal_codes = []
+    
+    # 🔧 ALL POSSIBLE HDR CODES
+    hdr_codes = ["HDR", "HABDIR", "HABIL", "HABILITATION", "HDR_SOUTENANCE", "HDR_DEFENSE", "MEMHDR"]
+    
+    for type_code in type_codes:
+        if type_code == "THESE":
+            # "Thèse" (ancien comportement) → THESE + tous les codes HDR
+            if "THESE" not in hal_codes:
+                hal_codes.append("THESE")
+            for hdr_code in hdr_codes:
+                if hdr_code not in hal_codes:
+                    hal_codes.append(hdr_code)
+                
+        elif type_code == "THESE_DOCTORANT":
+            # "Thèse (Doctorant)" → seulement THESE
+            if "THESE" not in hal_codes:
+                hal_codes.append("THESE")
+                
+        elif type_code == "HDR":
+            if "THESE" not in hal_codes:
+                hal_codes.append("THESE")
+            for hdr_code in hdr_codes:
+                if hdr_code not in hal_codes:
+                    hal_codes.append(hdr_code)
+                
+        elif type_code == "THESE_HDR":
+            # "Thèse (HDR)" → seulement tous les codes HDR
+            for hdr_code in hdr_codes:
+                if hdr_code not in hal_codes:
+                    hal_codes.append(hdr_code)
+                
+        else:
+            # Autres types : comportement normal
+            hal_codes.append(type_code)
+    
+    return hal_codes
+
+def get_hal_filter_for_post_processing(type_filter):
+    """
+    🔧 ENHANCED: Retourne les types HAL à accepter lors du post-filtrage avec codes HDR étendus
+    
+    Args:
+        type_filter (list): Liste des types sélectionnés par l'utilisateur
+    
+    Returns:
+        set: Ensemble des types HAL à accepter dans les résultats
+    """
+    if not type_filter:
+        return None
+    
+    accepted_hal_types = set()
+    
+    # 🔧 ALL POSSIBLE HDR CODES
+    hdr_codes = ["HDR", "HABDIR", "HABIL", "HABILITATION", "HDR_SOUTENANCE", "HDR_DEFENSE", "MEMHDR"]
+    
+    for type_name in type_filter:
+        type_code = get_type_code(type_name)
+        
+        if type_code == "THESE":
+            # "Thèse" → accepter THESE et tous les codes HDR
+            accepted_hal_types.add("THESE")
+            for hdr_code in hdr_codes:
+                accepted_hal_types.add(hdr_code)
+            
+        elif type_code == "THESE_DOCTORANT":
+            # "Thèse (Doctorant)" → accepter seulement THESE
+            accepted_hal_types.add("THESE")
+            
+        elif type_code == "HDR":
+            # "Habilitation à diriger des recherches" → accepter THESE et tous les codes HDR
+            accepted_hal_types.add("THESE")
+            for hdr_code in hdr_codes:
+                accepted_hal_types.add(hdr_code)
+            
+        elif type_code == "THESE_HDR":
+            # "Thèse (HDR)" → accepter seulement tous les codes HDR
+            for hdr_code in hdr_codes:
+                accepted_hal_types.add(hdr_code)
+            
+        else:
+            # Autres types
+            if type_code:
+                accepted_hal_types.add(type_code)
+    
+    return accepted_hal_types

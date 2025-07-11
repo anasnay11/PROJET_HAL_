@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 
-# main.py
-
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 import argparse
@@ -44,16 +42,13 @@ def create_progress_bar(current, total, description="Progress", bar_length=50):
     progress = current / total
     filled_length = int(bar_length * progress)
     
-    # Characters for the bar
     try:
         bar = '█' * filled_length + '░' * (bar_length - filled_length)
     except UnicodeEncodeError:
-        # Fallback to simple ASCII if encoding causes issues
         bar = '#' * filled_length + '-' * (bar_length - filled_length)
     
     percent = progress * 100
     
-    # Calculate estimated time
     if current > 0 and hasattr(create_progress_bar, 'start_time'):
         elapsed = time.time() - create_progress_bar.start_time
         rate = current / elapsed
@@ -65,11 +60,9 @@ def create_progress_bar(current, total, description="Progress", bar_length=50):
     else:
         eta_str = ""
     
-    # Clear line and display new one
     sys.stdout.write(f'\r{description}: |{bar}| {percent:.1f}% ({current}/{total}){eta_str}')
     sys.stdout.flush()
     
-    # New line at the end
     if current == total:
         print("\nCompleted!")
 
@@ -96,7 +89,6 @@ def list_csv_files():
     if not csv_files:
         raise FileNotFoundError(f"No CSV files found in directory '{data_directory}'.")
     return data_directory, csv_files
-
 
 def get_user_selected_csv():
     """
@@ -126,7 +118,6 @@ def get_user_selected_csv():
         print("Invalid input. Please enter a valid number.")
         exit(1)
 
-
 def create_extraction_folder():
     """Create extraction folder for output files"""
     current_directory = os.path.dirname(os.path.abspath(__file__))
@@ -137,21 +128,23 @@ def create_extraction_folder():
 
     return extraction_directory
 
-
 def fetch_data(row):
-    """Wrapper function for parallel data extraction"""
+    """🔧 UPDATED: Wrapper function for parallel data extraction with new type handling"""
+    # 🔧 CORRECTION: Pass type as list for proper handling in get_hal_data
+    type_filter = [args.type] if args.type else None
+    domain_filter = [args.domain] if args.domain else None
+    
     return get_hal_data(
         row["nom"], row["prenom"], 
         period=args.year, 
-        domain_filter=args.domain, 
-        type_filter=args.type,
+        domain_filter=domain_filter, 
+        type_filter=type_filter,
         threshold=args.threshold
     )
 
-
 def display_extraction_summary():
     """
-    Displays a summary of the extraction configured by the user
+    🔧 ENHANCED: Displays a summary of the extraction with detailed thesis information
     
     Shows filters, sensitivity settings, and output options in a formatted way
     """
@@ -159,7 +152,6 @@ def display_extraction_summary():
     print("EXTRACTION SUMMARY")
     print("="*60)
     
-    # Filter configuration
     filters = []
     if args.year:
         filters.append(f"period: {args.year}")
@@ -173,7 +165,6 @@ def display_extraction_summary():
     else:
         filter_text = "all data (no filters)"
     
-    # Output configuration
     outputs = []
     if args.graphs:
         outputs.append("graph generation")
@@ -187,7 +178,6 @@ def display_extraction_summary():
     else:
         output_text = "no additional output"
     
-    # Sensitivity levels
     sensitivity_levels = {
         0: "very strict",
         1: "strict", 
@@ -200,8 +190,22 @@ def display_extraction_summary():
     print(f"• Extraction: {filter_text}")
     print(f"• Matching: {sensitivity_text}")
     print(f"• Outputs: {output_text}")
+    
+    # 🔧 ENHANCED: Detailed thesis information
+    if args.type:
+        type_lower = args.type.lower()
+        if any(keyword in type_lower for keyword in ['thèse', 'habilitation', 'thesis', 'hdr']):
+            print(f"• Extended search: Double query (prenom nom + nom prenom) for better results")
+        
+        # 🆕 NEW: Specific information for new thesis types
+        if 'doctorant' in type_lower:
+            print(f"• Thesis filter: PhD theses only (THESE documents)")
+        elif 'hdr' in type_lower and 'thèse' in type_lower:
+            print(f"• Thesis filter: HDR theses only (HDR documents)")
+        elif 'thèse' in type_lower or 'habilitation' in type_lower:
+            print(f"• Thesis filter: Both PhD and HDR theses (THESE + HDR documents)")
+    
     print("="*60 + "\n")
-
 
 def main():
     """
@@ -211,25 +215,30 @@ def main():
     Supports filtering by year, domain, document type, configurable name matching
     sensitivity, and automatic generation of graphs and reports.
     """
-    # Command line arguments
     parser = argparse.ArgumentParser(
         description=(
             "This file allows scientific data extraction from the HAL database.\n"
             "Possibility to filter publications by period, scientific domain, document type,\n"
-            "and configure the sensitivity of author name matching."
+            "and configure the sensitivity of author name matching.\n\n"
+            "🆕 NEW THESIS TYPES:\n"
+            "- 'Thèse (Doctorant)' : PhD theses only (THESE documents)\n"
+            "- 'Thèse (HDR)' : HDR theses only (HDR documents)\n"
+            "- 'Thèse' : Both PhD and HDR theses (THESE + HDR documents)\n\n"
+            "IMPORTANT: The system uses double queries (prenom nom + nom prenom) for better results."
         ),
         epilog=(
             'Examples:\n'
-            'python main.py --year 2019-2024 --domain "Mathematics" --type "Thesis"\n'
-            'python main.py --threshold 1 --graphs\n'
+            'python main.py --year 2019-2024 --domain "Mathematics" --type "Thèse (Doctorant)"\n'
+            'python main.py --type "Thèse (HDR)" --graphs\n'
+            'python main.py --type "Thèse" --threshold 1\n'
             'python main.py --threshold 3 --reportpdf\n'
             'python main.py --graphs --reportpdf --reportlatex\n\n'
-            'To see available sensitivity levels:\n'
+            'To see available types and sensitivity levels:\n'
+            'python main.py --list-types\n'
             'python main.py --list-sensitivity'
         ),
         formatter_class=argparse.RawTextHelpFormatter,
     )
-
 
     parser.add_argument(
         "--year", 
@@ -243,7 +252,13 @@ def main():
     )
     parser.add_argument(
         "--type", 
-        help='Filter publications by document type. Example: "Thesis".', 
+        help=(
+            'Filter publications by document type. Examples:\n'
+            '  "Thèse (Doctorant)" - PhD theses only\n'
+            '  "Thèse (HDR)" - HDR theses only\n'
+            '  "Thèse" - Both PhD and HDR theses\n'
+            '  "Article de journal" - Journal articles'
+        ), 
         type=str
     )
     parser.add_argument(
@@ -294,7 +309,6 @@ def main():
     global args
     args = parser.parse_args()
 
-    # Display sensitivity levels list if requested
     if args.list_sensitivity:
         print("Available sensitivity levels:\n")
         print("0: Very strict (exact match only)")
@@ -305,7 +319,6 @@ def main():
         print(f"\nDefault level: 2 (moderate)")
         exit()
 
-    # Display domains list if requested
     if args.list_domains:
         domains = list_domains()
         print("List of available domains for filtering:\n")
@@ -313,31 +326,52 @@ def main():
             print(f"{code}: {name}")
         exit()
 
-    # Display types list if requested
     if args.list_types:
         types = list_types()
-        print("List of available document types for filtering:\n")
+        print("🔧 ENHANCED: List of available document types for filtering:\n")
+        
+        # 🆕 NEW: Group thesis types for better display
+        thesis_types = []
+        other_types = []
+        
         for code, name in types.items():
-            print(f"{code}: {name}")
+            if 'thèse' in name.lower() or 'habilitation' in name.lower():
+                thesis_types.append((code, name))
+            else:
+                other_types.append((code, name))
+        
+        if thesis_types:
+            print("📚 THESIS TYPES:")
+            for code, name in thesis_types:
+                if 'doctorant' in name.lower():
+                    print(f"  {code}: {name} (PhD only)")
+                elif 'hdr' in name.lower() and 'thèse' in name.lower():
+                    print(f"  {code}: {name} (HDR only)")
+                elif name == "Thèse":
+                    print(f"  {code}: {name} (PhD + HDR)")
+                else:
+                    print(f"  {code}: {name} (PhD + HDR)")
+            print()
+        
+        print("📄 OTHER DOCUMENT TYPES:")
+        for code, name in other_types:
+            print(f"  {code}: {name}")
+        
         exit()
 
-    # Display used threshold
     sensitivity_names = {0: "very strict", 1: "strict", 2: "moderate", 3: "permissive", 4: "very permissive"}
     print(f"Sensitivity threshold used: {args.threshold} ({sensitivity_names[args.threshold]})")
 
-    # Load scientific data
     try:
         csv_file_path = get_user_selected_csv()
         scientists_df = pd.read_csv(csv_file_path, encoding='utf-8-sig')
         
-        # Display summary after file selection
         display_extraction_summary()
         
     except FileNotFoundError as e:
         print(e)
         exit(1)
 
-    # Data extraction with native progress bar
     print("Starting extraction...")
     init_progress_bar()
 
@@ -357,17 +391,38 @@ def main():
 
     all_results = pd.concat(results, ignore_index=True)
 
-    # Save results
     extraction_directory = create_extraction_folder()
     filename = generate_filename(args.year, args.domain, args.type)
     output_path = os.path.join(extraction_directory, filename)
     all_results.to_csv(output_path, index=False)
+    
     print(f"Extraction completed. Results saved to: {output_path}")
+    
+    # 🔧 ENHANCED: Detailed statistics display
+    if not all_results.empty:
+        print(f"\nExtraction completed: {len(all_results)} publications found")
+        
+        # Display document type statistics if available
+        if 'Type de Document' in all_results.columns:
+            type_counts = all_results['Type de Document'].value_counts()
+            print("\nDocument types found:")
+            for doc_type, count in type_counts.items():
+                print(f"  {doc_type}: {count} publications")
+            
+            # 🆕 NEW: Special message for thesis extractions
+            if args.type and any(keyword in args.type.lower() for keyword in ['thèse', 'habilitation']):
+                total_theses = sum(count for doc_type, count in type_counts.items() 
+                                 if 'thèse' in doc_type.lower() or 'habilitation' in doc_type.lower())
+                print(f"\n Total thesis-related documents: {total_theses}")
 
-    # Graph generation (if requested via --graphs)
     if args.graphs:
         try:
             print("Generating graphs...")
+            
+            # Create directories if they don't exist
+            os.makedirs("html", exist_ok=True)
+            os.makedirs("png", exist_ok=True)
+            
             plot_publications_by_year(output_path, output_html="html/pubs_by_year.html", output_png="png/pubs_by_year.png")
             plot_document_types(output_path, output_html="html/type_distribution.html", output_png="png/type_distribution.png")
             plot_keywords(output_path, output_html="html/keywords_distribution.html", output_png="png/keywords_distribution.png")
@@ -385,21 +440,17 @@ def main():
         except Exception as e:
             print(f"Error during graph generation: {e}")
 
-    # PDF report generation (if requested via --reportpdf)
     if args.reportpdf:
         try:
             print("Generating PDF report...")
-            # Generate report (function creates the reports folder itself)
             nom_fichier_csv = os.path.basename(output_path).replace(".csv", "")
             generate_pdf_report(nom_fichier_csv)
         except Exception as e:
             print(f"Error during PDF report generation: {e}")
 
-    # LaTeX report generation (if requested via --reportlatex)
     if args.reportlatex:
         try:
             print("Generating LaTeX report...")
-            # Generate report (function creates the reports folder itself)
             nom_fichier_csv = os.path.basename(output_path).replace(".csv", "")
             generate_latex_report(nom_fichier_csv)
         except Exception as e:

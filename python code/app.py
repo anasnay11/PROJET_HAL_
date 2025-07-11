@@ -241,10 +241,15 @@ def afficher_recapitulatif_extraction(periode=None, types=None, domaines=None):
             details_list.append(f"• Période : {periode}")
         
         if types:
+            # Vérifier si THESE ou HDR sont sélectionnés pour informer l'utilisateur
+            these_hdr_info = ""
+            if any(t.lower() in ["thèse", "habilitation à diriger des recherches"] for t in types):
+                these_hdr_info = " (inclut automatiquement thèses et HDR)"
+            
             if len(types) == 1:
-                details_list.append(f"• Type de document : {types[0]}")
+                details_list.append(f"• Type de document : {types[0]}{these_hdr_info}")
             else:
-                details_list.append(f"• Types de documents : {', '.join(types)}")
+                details_list.append(f"• Types de documents : {', '.join(types)}{these_hdr_info}")
         
         if domaines:
             if len(domaines) == 1:
