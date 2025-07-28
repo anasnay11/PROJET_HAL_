@@ -15,3 +15,6 @@ plotly>=5.15.0
 
 # Static image export for Plotly graphs (PNG, PDF, SVG)
 kaleido>=0.2.1
+
+# Machine Learning and Clustering
+scikit-learn>=1.0.0
