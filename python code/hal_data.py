@@ -22,7 +22,7 @@ def is_same_author_levenshtein(nom_csv, prenom_csv, nom_hal, prenom_hal, thresho
         bool: True if authors match
     """
     if not nom_hal or not prenom_hal:
-        return False
+        return False 
     
     # Calculate distances
     # Test 1: Normal order (CSV nom with HAL nom, CSV prenom with HAL prenom)
@@ -92,9 +92,7 @@ def extract_author_id_simple(nom, prenom, threshold=DEFAULT_THRESHOLD):
     if not all_author_ids:
         return "Id non disponible"
                 
-    # ===========================
     # AUTHOR VARIANTS PREPARATION
-    # ===========================
     
     # Normalize last name and first name (lowercase, no multiple spaces)
     nom_clean = nom.strip().lower()
@@ -140,9 +138,7 @@ def extract_author_id_simple(nom, prenom, threshold=DEFAULT_THRESHOLD):
     nom_variants = create_variants(nom_clean)
     prenom_variants = create_variants(prenom_clean)
     
-    # =====================
     # STEP 1: STRICT METHOD
-    # =====================
     
     matching_ids_strict = []
     
@@ -229,9 +225,7 @@ def extract_author_id_simple(nom, prenom, threshold=DEFAULT_THRESHOLD):
     if matching_ids_strict:
         return matching_ids_strict[0]
     
-    # ==========================================
     # STEP 2: FALLBACK METHOD - PARTIAL MATCHING
-    # ==========================================
     
     matching_ids_partial = []
     
@@ -241,9 +235,7 @@ def extract_author_id_simple(nom, prenom, threshold=DEFAULT_THRESHOLD):
         
         auth_id_lower = auth_id.lower()
         
-        # =====================================================
         # STRATEGY 1: ONLY last name must be found for fallback
-        # =====================================================
         
         partial_match_found = False
         
@@ -253,9 +245,7 @@ def extract_author_id_simple(nom, prenom, threshold=DEFAULT_THRESHOLD):
                 partial_match_found = True
                 break
         
-        # ====================
         # STRATEGY 2: Initials
-        # ====================
         
         if not partial_match_found:
             # Create possible initials
@@ -284,9 +274,7 @@ def extract_author_id_simple(nom, prenom, threshold=DEFAULT_THRESHOLD):
                     partial_match_found = True
                     break
         
-        # ===============================================
         # STRATEGY 3: Approximate matching of complete ID
-        # ===============================================
         
         if not partial_match_found:
             # Create "compact" versions of full name
@@ -331,7 +319,7 @@ def execute_hal_query(query_url):
 
 def get_hal_data(nom, prenom, period=None, domain_filter=None, type_filter=None, threshold=DEFAULT_THRESHOLD):
     """
-    🔧 ENHANCED: Main function with granular thesis/HDR filtering
+    ENHANCED: Main function with granular thesis/HDR filtering
     
     Args:
         nom (str): Nom de famille
@@ -345,15 +333,11 @@ def get_hal_data(nom, prenom, period=None, domain_filter=None, type_filter=None,
         pd.DataFrame: DataFrame contenant les publications trouvées
     """
     
-    # ==============================
     # STEP 1: SEPARATE ID EXTRACTION
-    # ==============================
     
     author_id = extract_author_id_simple(nom, prenom, threshold)
     
-    # =====================================
     # STEP 2: DOUBLE QUERY FOR PUBLICATIONS
-    # =====================================
     
     # Build base queries for both name orders
     name_variants = [f"{prenom} {nom}", f"{nom} {prenom}"]
@@ -387,9 +371,7 @@ def get_hal_data(nom, prenom, period=None, domain_filter=None, type_filter=None,
         
         query_urls.append(query_url)
     
-    # ======================================
     # STEP 3: EXECUTE BOTH QUERIES AND MERGE
-    # ======================================
     
     all_publications = []
     seen_docids = set()  # To avoid duplicates between the two queries
@@ -407,9 +389,7 @@ def get_hal_data(nom, prenom, period=None, domain_filter=None, type_filter=None,
     if not all_publications:
         return pd.DataFrame()
 
-    # ===============================
     # STEP 4: ENHANCED POST-FILTERING
-    # ===============================
     
     # Get the precise HAL types to accept
     accepted_hal_types = get_hal_filter_for_post_processing(type_filter)

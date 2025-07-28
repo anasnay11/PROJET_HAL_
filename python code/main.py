@@ -9,6 +9,7 @@ from mapping import list_domains, list_types
 from config import get_threshold_from_level, list_sensitivity_levels, DEFAULT_THRESHOLD
 from dashboard_generator import create_dashboard
 from report_generator_main import generate_pdf_report, generate_latex_report
+from clustering_model import load_and_analyze_csv
 import webbrowser
 import os
 import sys
@@ -129,8 +130,8 @@ def create_extraction_folder():
     return extraction_directory
 
 def fetch_data(row):
-    """🔧 UPDATED: Wrapper function for parallel data extraction with new type handling"""
-    # 🔧 CORRECTION: Pass type as list for proper handling in get_hal_data
+    """UPDATED: Wrapper function for parallel data extraction with new type handling"""
+    # CORRECTION: Pass type as list for proper handling in get_hal_data
     type_filter = [args.type] if args.type else None
     domain_filter = [args.domain] if args.domain else None
     
@@ -144,7 +145,7 @@ def fetch_data(row):
 
 def display_extraction_summary():
     """
-    🔧 ENHANCED: Displays a summary of the extraction with detailed thesis information
+    ENHANCED: Displays a summary of the extraction with detailed thesis information
     
     Shows filters, sensitivity settings, and output options in a formatted way
     """
@@ -191,13 +192,13 @@ def display_extraction_summary():
     print(f"• Matching: {sensitivity_text}")
     print(f"• Outputs: {output_text}")
     
-    # 🔧 ENHANCED: Detailed thesis information
+    # ENHANCED: Detailed thesis information
     if args.type:
         type_lower = args.type.lower()
         if any(keyword in type_lower for keyword in ['thèse', 'habilitation', 'thesis', 'hdr']):
             print(f"• Extended search: Double query (prenom nom + nom prenom) for better results")
         
-        # 🆕 NEW: Specific information for new thesis types
+        # NEW: Specific information for new thesis types
         if 'doctorant' in type_lower:
             print(f"• Thesis filter: PhD theses only (THESE documents)")
         elif 'hdr' in type_lower and 'thèse' in type_lower:
@@ -207,23 +208,446 @@ def display_extraction_summary():
     
     print("="*60 + "\n")
 
+def list_extraction_csv_files():
+    """
+    Liste les fichiers CSV disponibles dans le dossier extraction
+    
+    Returns:
+        tuple: (extraction_directory_path, list_of_csv_files)
+        
+    Raises:
+        FileNotFoundError: Si le dossier extraction ou les fichiers CSV ne sont pas trouvés
+    """
+    current_directory = os.path.dirname(os.path.abspath(__file__))
+    extraction_directory = os.path.join(current_directory, "extraction")
+    
+    if not os.path.exists(extraction_directory):
+        raise FileNotFoundError(f"Le dossier 'extraction' n'existe pas dans {current_directory}")
+
+    csv_files = [f for f in os.listdir(extraction_directory) if f.endswith(".csv")]
+    if not csv_files:
+        raise FileNotFoundError(f"Aucun fichier CSV trouvé dans le dossier 'extraction'")
+    
+    return extraction_directory, csv_files
+
+def select_extraction_csv():
+    """
+    Sélection interactive d'un fichier CSV depuis le dossier extraction
+    
+    Returns:
+        str: Chemin complet vers le fichier CSV sélectionné
+        
+    Raises:
+        SystemExit: Si choix invalide ou entrée incorrecte
+    """
+    try:
+        extraction_directory, csv_files = list_extraction_csv_files()
+        
+        print("\n" + "="*60)
+        print("FICHIERS CSV DISPONIBLES DANS 'extraction/'")
+        print("="*60)
+        
+        for i, file in enumerate(csv_files, start=1):
+            # Afficher des informations sur le fichier
+            file_path = os.path.join(extraction_directory, file)
+            file_size = os.path.getsize(file_path)
+            size_mb = file_size / (1024 * 1024)
+            
+            print(f"{i:2d}. {file:<40} ({size_mb:.1f} MB)")
+
+        print("="*60)
+        choice = int(input(f"\nSélectionnez un fichier (1-{len(csv_files)}): "))
+        
+        if 1 <= choice <= len(csv_files):
+            selected_file = os.path.join(extraction_directory, csv_files[choice - 1])
+            print(f"Fichier sélectionné: {csv_files[choice - 1]}")
+            return selected_file
+        else:
+            print("Choix invalide. Veuillez relancer le programme.")
+            exit(1)
+            
+    except ValueError:
+        print("Entrée invalide. Veuillez entrer un nombre.")
+        exit(1)
+    except FileNotFoundError as e:
+        print(f"{e}")
+        exit(1)
+
+def check_model_status():
+    """
+    Vérifie le statut du modèle de clustering
+    
+    Returns:
+        bool: True si le modèle existe et est valide
+    """
+    model_path = 'clustering_model.pkl'
+    
+    if not os.path.exists(model_path):
+        return False
+    
+    try:
+        # Tenter de charger le modèle pour vérifier sa validité
+        from clustering_model import DuplicateHomonymClusteringModel
+        temp_model = DuplicateHomonymClusteringModel()
+        temp_model.load_model(model_path)
+        return True
+    except Exception:
+        return False
+
+def analyze_csv_cli():
+    """
+    Interface en ligne de commande pour l'analyse d'un fichier CSV
+    """
+    print("\n" + "="*60)
+    print("ANALYSE DES DOUBLONS & HOMONYMES")
+    print("="*60)
+    
+    # Vérifier si le modèle existe
+    if not check_model_status():
+        print("ERREUR: Aucun modèle de clustering valide trouvé.")
+        print("\nPour utiliser cette fonctionnalité, vous devez d'abord")
+        print("entraîner un modèle avec le script dédié :")
+        print("  python train_model.py")
+        print("\nCe script vous permettra de :")
+        print("- Sélectionner un fichier CSV d'entraînement")
+        print("- Créer le modèle clustering_model.pkl")
+        print("- Valider le modèle pour l'analyse")
+        return
+    
+    # Sélectionner le fichier à analyser
+    analysis_file = select_extraction_csv()
+    
+    print(f"\nAnalyse du fichier: {os.path.basename(analysis_file)}")
+    print("Analyse en cours...")
+    
+    try:
+        # Lancer l'analyse
+        results = load_and_analyze_csv(analysis_file, 'clustering_model.pkl')
+        
+        # Afficher les résultats détaillés
+        display_analysis_results(results)
+        
+        # Proposer des actions
+        propose_actions(results, analysis_file)
+        
+    except Exception as e:
+        print(f"\nERREUR lors de l'analyse: {str(e)}")
+
+def display_analysis_results(results):
+    """
+    Affiche les résultats de l'analyse de manière détaillée
+    
+    Args:
+        results: Dictionnaire des résultats d'analyse
+    """
+    summary = results['summary']
+    
+    print(f"\n" + "="*60)
+    print("RÉSULTATS DE L'ANALYSE")
+    print("="*60)
+    
+    print(f"Publications analysées: {summary['total_publications']}")
+    print(f"Auteurs uniques: {summary['unique_authors']}")
+    print(f"Paires de doublons détectées: {summary['duplicate_pairs']}")
+    print(f"Paires d'homonymes détectées: {summary['homonym_pairs']}")
+    
+    # Afficher les doublons détectés
+    if results['duplicate_cases']:
+        print(f"\n" + "="*50)
+        print("DOUBLONS DÉTECTÉS")
+        print("="*50)
+        
+        for i, case in enumerate(results['duplicate_cases'][:5], 1):  # Limiter à 5 exemples
+            print(f"\n{i}. {case['author']} (Score: {case['similarity_score']:.3f})")
+            print(f"   Titre 1: {case['title1'][:70]}...")
+            print(f"   Titre 2: {case['title2'][:70]}...")
+            print(f"   Années: {case['year1']} / {case['year2']}")
+        
+        if len(results['duplicate_cases']) > 5:
+            print(f"\n... et {len(results['duplicate_cases']) - 5} autres doublons")
+    
+    # Afficher les homonymes détectés
+    if results['homonym_cases']:
+        print(f"\n" + "="*50)
+        print("HOMONYMES DÉTECTÉS")
+        print("="*50)
+        
+        for i, case in enumerate(results['homonym_cases'][:5], 1):  # Limiter à 5 exemples
+            print(f"\n{i}. {case['author']} (Écart: {case['year_gap']} ans)")
+            print(f"   Titre 1: {case['title1'][:70]}...")
+            print(f"   Titre 2: {case['title2'][:70]}...")
+            print(f"   Années: {case['year1']} / {case['year2']}")
+            print(f"   Score: {case['similarity_score']:.3f}")
+        
+        if len(results['homonym_cases']) > 5:
+            print(f"\n... et {len(results['homonym_cases']) - 5} autres homonymes")
+
+def propose_actions(results, analysis_file):
+    """
+    Propose des actions à l'utilisateur après l'analyse
+    
+    Args:
+        results: Dictionnaire des résultats d'analyse
+        analysis_file: Chemin vers le fichier analysé
+    """
+    print(f"\n" + "="*60)
+    print("ACTIONS DISPONIBLES")
+    print("="*60)
+    
+    print("1. Traiter automatiquement les données")
+    print("2. Exporter les résultats détaillés")
+    print("3. Afficher plus de détails")
+    print("4. Terminer")
+    
+    while True:
+        try:
+            choice = int(input(f"\nChoisissez une action (1-4): "))
+            
+            if choice == 1:
+                treat_data_cli(results, analysis_file)
+                break
+            elif choice == 2:
+                export_results_cli(results, analysis_file)
+                break
+            elif choice == 3:
+                display_detailed_results(results)
+                # Après affichage, reproposer les actions
+                continue
+            elif choice == 4:
+                print("Analyse terminée.")
+                break
+            else:
+                print("Choix invalide. Veuillez choisir entre 1 et 4.")
+                
+        except ValueError:
+            print("Entrée invalide. Veuillez entrer un nombre.")
+
+def treat_data_cli(results, analysis_file):
+    """
+    Traite automatiquement les données problématiques
+    
+    Args:
+        results: Dictionnaire des résultats d'analyse
+        analysis_file: Chemin vers le fichier analysé
+    """
+    print(f"\n" + "="*50)
+    print("TRAITEMENT AUTOMATIQUE DES DONNÉES")
+    print("="*50)
+    
+    summary = results['summary']
+    
+    print(f"Impact du traitement:")
+    print(f"   • Doublons à supprimer: {summary['duplicate_pairs']} paires")
+    print(f"   • Homonymes à marquer: {summary['homonym_pairs']} paires")
+    
+    # Options de traitement
+    print(f"\nOptions de traitement:")
+    print(f"1. Supprimer les doublons uniquement")
+    print(f"2. Marquer les homonymes (ajouter une colonne)")
+    print(f"3. Traitement complet (doublons + homonymes)")
+    print(f"4. Traitement personnalisé")
+    
+    try:
+        choice = int(input(f"\nChoisissez le type de traitement (1-4): "))
+        
+        # Charger les données originales
+        original_df = pd.read_csv(analysis_file)
+        processed_df = original_df.copy()
+        
+        actions_performed = []
+        
+        if choice == 1 or choice == 3:  # Supprimer doublons
+            if results['duplicate_cases']:
+                indices_to_remove = set()
+                for case in results['duplicate_cases']:
+                    indices_to_remove.add(case['index2'])  # Garder le premier
+                
+                processed_df = processed_df.drop(indices_to_remove).reset_index(drop=True)
+                actions_performed.append(f"Supprimé {len(indices_to_remove)} doublons")
+        
+        if choice == 2 or choice == 3:  # Marquer homonymes
+            if results['homonym_cases']:
+                processed_df['Homonyme_Potentiel'] = False
+                marked_count = 0
+                for case in results['homonym_cases']:
+                    if case['index1'] < len(processed_df):
+                        processed_df.loc[case['index1'], 'Homonyme_Potentiel'] = True
+                        marked_count += 1
+                    if case['index2'] < len(processed_df):
+                        processed_df.loc[case['index2'], 'Homonyme_Potentiel'] = True
+                        marked_count += 1
+                
+                actions_performed.append(f"Marqué {marked_count} publications comme homonymes potentiels")
+        
+        if choice == 4:  # Traitement personnalisé
+            print(f"\nTraitement personnalisé:")
+            
+            if results['duplicate_cases']:
+                remove_dup = input("Supprimer les doublons ? (o/n): ").lower()
+                if remove_dup in ['o', 'oui', 'y', 'yes']:
+                    indices_to_remove = set()
+                    for case in results['duplicate_cases']:
+                        indices_to_remove.add(case['index2'])
+                    
+                    processed_df = processed_df.drop(indices_to_remove).reset_index(drop=True)
+                    actions_performed.append(f"Supprimé {len(indices_to_remove)} doublons")
+            
+            if results['homonym_cases']:
+                mark_hom = input("Marquer les homonymes ? (o/n): ").lower()
+                if mark_hom in ['o', 'oui', 'y', 'yes']:
+                    processed_df['Homonyme_Potentiel'] = False
+                    marked_count = 0
+                    for case in results['homonym_cases']:
+                        if case['index1'] < len(processed_df):
+                            processed_df.loc[case['index1'], 'Homonyme_Potentiel'] = True
+                            marked_count += 1
+                        if case['index2'] < len(processed_df):
+                            processed_df.loc[case['index2'], 'Homonyme_Potentiel'] = True
+                            marked_count += 1
+                    
+                    actions_performed.append(f"Marqué {marked_count} publications comme homonymes potentiels")
+        
+        # Sauvegarder le fichier traité
+        base_name = os.path.splitext(os.path.basename(analysis_file))[0]
+        processed_filename = f"{base_name}_traite.csv"
+        processed_path = os.path.join('extraction', processed_filename)
+        
+        processed_df.to_csv(processed_path, index=False)
+        
+        # Afficher le résumé
+        print(f"\nTRAITEMENT TERMINÉ")
+        print(f"Publications originales: {len(original_df)}")
+        print(f"Publications traitées: {len(processed_df)}")
+        print(f"Publications supprimées: {len(original_df) - len(processed_df)}")
+        print(f"Fichier sauvegardé: {processed_path}")
+        
+        if actions_performed:
+            print(f"\nActions effectuées:")
+            for action in actions_performed:
+                print(f"   • {action}")
+        
+    except ValueError:
+        print("Entrée invalide.")
+    except Exception as e:
+        print(f"Erreur lors du traitement: {str(e)}")
+
+def export_results_cli(results, analysis_file):
+    """
+    Exporte les résultats détaillés
+    
+    Args:
+        results: Dictionnaire des résultats d'analyse
+        analysis_file: Chemin vers le fichier analysé
+    """
+    print(f"\n" + "="*50)
+    print("EXPORTATION DES RÉSULTATS")
+    print("="*50)
+    
+    base_name = os.path.splitext(os.path.basename(analysis_file))[0]
+    export_dir = 'extraction'
+    
+    try:
+        exported_files = []
+        
+        # Exporter les doublons
+        if results['duplicate_cases']:
+            dup_df = pd.DataFrame(results['duplicate_cases'])
+            dup_path = os.path.join(export_dir, f'{base_name}_doublons.csv')
+            dup_df.to_csv(dup_path, index=False)
+            exported_files.append(dup_path)
+        
+        # Exporter les homonymes
+        if results['homonym_cases']:
+            hom_df = pd.DataFrame(results['homonym_cases'])
+            hom_path = os.path.join(export_dir, f'{base_name}_homonymes.csv')
+            hom_df.to_csv(hom_path, index=False)
+            exported_files.append(hom_path)
+        
+        # Exporter le résumé
+        summary_path = os.path.join(export_dir, f'{base_name}_resume.txt')
+        with open(summary_path, 'w', encoding='utf-8') as f:
+            summary = results['summary']
+            f.write("RÉSUMÉ DE L'ANALYSE\n")
+            f.write("="*50 + "\n\n")
+            f.write(f"Fichier analysé: {os.path.basename(analysis_file)}\n")
+            f.write(f"Publications analysées: {summary['total_publications']}\n")
+            f.write(f"Auteurs uniques: {summary['unique_authors']}\n")
+            f.write(f"Paires de doublons: {summary['duplicate_pairs']}\n")
+            f.write(f"Paires d'homonymes: {summary['homonym_pairs']}\n")
+        
+        exported_files.append(summary_path)
+        
+        print(f"Résultats exportés avec succès:")
+        for file_path in exported_files:
+            print(f"   {os.path.basename(file_path)}")
+        
+        print(f"\nDossier d'exportation: {export_dir}")
+        
+    except Exception as e:
+        print(f"Erreur lors de l'exportation: {str(e)}")
+
+def display_detailed_results(results):
+    """
+    Affiche des résultats plus détaillés
+    
+    Args:
+        results: Dictionnaire des résultats d'analyse
+    """
+    print(f"\n" + "="*60)
+    print("RÉSULTATS DÉTAILLÉS")
+    print("="*60)
+    
+    # Afficher tous les doublons
+    if results['duplicate_cases']:
+        print(f"\nTOUS LES DOUBLONS ({len(results['duplicate_cases'])}):")
+        print("-" * 50)
+        for i, case in enumerate(results['duplicate_cases'], 1):
+            print(f"\n{i:2d}. {case['author']}")
+            print(f"    Score: {case['similarity_score']:.3f}")
+            print(f"    Titre 1 ({case['year1']}): {case['title1']}")
+            print(f"    Titre 2 ({case['year2']}): {case['title2']}")
+    
+    # Afficher tous les homonymes
+    if results['homonym_cases']:
+        print(f"\nTOUS LES HOMONYMES ({len(results['homonym_cases'])}):")
+        print("-" * 50)
+        for i, case in enumerate(results['homonym_cases'], 1):
+            print(f"\n{i:2d}. {case['author']}")
+            print(f"    Écart: {case['year_gap']} ans, Score: {case['similarity_score']:.3f}")
+            print(f"    Titre 1 ({case['year1']}): {case['title1']}")
+            print(f"    Titre 2 ({case['year2']}): {case['title2']}")
+
+def add_clustering_arguments(parser):
+    """Ajoute les arguments pour le clustering"""
+    
+    parser.add_argument(
+        "--analyse",
+        help="Lancer l'analyse des doublons et homonymes sur un fichier CSV du dossier extraction",
+        action="store_true"
+    )
+
 def main():
     """
     Main function that handles command line arguments and orchestrates the entire 
     HAL data extraction and analysis workflow.
     
     Supports filtering by year, domain, document type, configurable name matching
-    sensitivity, and automatic generation of graphs and reports.
+    sensitivity, automatic generation of graphs and reports, and clustering analysis.
     """
     parser = argparse.ArgumentParser(
         description=(
             "This file allows scientific data extraction from the HAL database.\n"
             "Possibility to filter publications by period, scientific domain, document type,\n"
             "and configure the sensitivity of author name matching.\n\n"
-            "🆕 NEW THESIS TYPES:\n"
+            "NEW THESIS TYPES:\n"
             "- 'Thèse (Doctorant)' : PhD theses only (THESE documents)\n"
             "- 'Thèse (HDR)' : HDR theses only (HDR documents)\n"
             "- 'Thèse' : Both PhD and HDR theses (THESE + HDR documents)\n\n"
+            "CLUSTERING ANALYSIS:\n"
+            "- Analyze CSV files with pre-trained machine learning models\n"
+            "- Detect duplicates and homonyms automatically\n"
+            "- Clean data and export results\n\n"
+            "NOTE: To train a new model, use: python train_model.py\n"
             "IMPORTANT: The system uses double queries (prenom nom + nom prenom) for better results."
         ),
         epilog=(
@@ -233,6 +657,10 @@ def main():
             'python main.py --type "Thèse" --threshold 1\n'
             'python main.py --threshold 3 --reportpdf\n'
             'python main.py --graphs --reportpdf --reportlatex\n\n'
+            'Clustering analysis examples:\n'
+            'python main.py --analyse\n\n'
+            'Model training (separate script):\n'
+            'python train_model.py\n\n'
             'To see available types and sensitivity levels:\n'
             'python main.py --list-types\n'
             'python main.py --list-sensitivity'
@@ -306,8 +734,17 @@ def main():
         action="store_true"
     )
 
+    # Ajouter les arguments pour le clustering
+    add_clustering_arguments(parser)
+
     global args
     args = parser.parse_args()
+
+    # Gérer l'option d'analyse de clustering
+    if args.analyse:
+        print("Mode analyse des doublons et homonymes activé")
+        analyze_csv_cli()
+        exit(0)
 
     if args.list_sensitivity:
         print("Available sensitivity levels:\n")
@@ -328,9 +765,9 @@ def main():
 
     if args.list_types:
         types = list_types()
-        print("🔧 ENHANCED: List of available document types for filtering:\n")
+        print("ENHANCED: List of available document types for filtering:\n")
         
-        # 🆕 NEW: Group thesis types for better display
+        # NEW: Group thesis types for better display
         thesis_types = []
         other_types = []
         
@@ -341,7 +778,7 @@ def main():
                 other_types.append((code, name))
         
         if thesis_types:
-            print("📚 THESIS TYPES:")
+            print("THESIS TYPES:")
             for code, name in thesis_types:
                 if 'doctorant' in name.lower():
                     print(f"  {code}: {name} (PhD only)")
@@ -353,7 +790,7 @@ def main():
                     print(f"  {code}: {name} (PhD + HDR)")
             print()
         
-        print("📄 OTHER DOCUMENT TYPES:")
+        print("OTHER DOCUMENT TYPES:")
         for code, name in other_types:
             print(f"  {code}: {name}")
         
@@ -398,7 +835,7 @@ def main():
     
     print(f"Extraction completed. Results saved to: {output_path}")
     
-    # 🔧 ENHANCED: Detailed statistics display
+    # ENHANCED: Detailed statistics display
     if not all_results.empty:
         print(f"\nExtraction completed: {len(all_results)} publications found")
         
@@ -409,7 +846,7 @@ def main():
             for doc_type, count in type_counts.items():
                 print(f"  {doc_type}: {count} publications")
             
-            # 🆕 NEW: Special message for thesis extractions
+            # NEW: Special message for thesis extractions
             if args.type and any(keyword in args.type.lower() for keyword in ['thèse', 'habilitation']):
                 total_theses = sum(count for doc_type, count in type_counts.items() 
                                  if 'thèse' in doc_type.lower() or 'habilitation' in doc_type.lower())
