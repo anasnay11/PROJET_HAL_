@@ -9,11 +9,12 @@ from mapping import list_domains, list_types
 from config import get_threshold_from_level, list_sensitivity_levels, DEFAULT_THRESHOLD
 from dashboard_generator import create_dashboard
 from report_generator_main import generate_pdf_report, generate_latex_report
-from clustering_model import load_and_analyze_csv
+from detection_doublons_homonymes import DuplicateHomonymDetector
 import webbrowser
 import os
 import sys
 import time
+import json
 from graphics import (
     plot_publications_by_year,
     plot_document_types,
@@ -273,114 +274,72 @@ def select_extraction_csv():
         print(f"{e}")
         exit(1)
 
-def check_model_status():
-    """
-    Vérifie le statut du modèle de clustering
-    
-    Returns:
-        bool: True si le modèle existe et est valide
-    """
-    model_path = 'clustering_model.pkl'
-    
-    if not os.path.exists(model_path):
-        return False
-    
-    try:
-        # Tenter de charger le modèle pour vérifier sa validité
-        from clustering_model import DuplicateHomonymClusteringModel
-        temp_model = DuplicateHomonymClusteringModel()
-        temp_model.load_model(model_path)
-        return True
-    except Exception:
-        return False
-
 def analyze_csv_cli():
     """
-    Interface en ligne de commande pour l'analyse d'un fichier CSV
+    Interface en ligne de commande pour l'analyse d'un fichier CSV avec la nouvelle méthode
     """
     print("\n" + "="*60)
     print("ANALYSE DES DOUBLONS & HOMONYMES")
     print("="*60)
-    
-    # Vérifier si le modèle existe
-    if not check_model_status():
-        print("ERREUR: Aucun modèle de clustering valide trouvé.")
-        print("\nPour utiliser cette fonctionnalité, vous devez d'abord")
-        print("entraîner un modèle avec le script dédié :")
-        print("  python train_model.py")
-        print("\nCe script vous permettra de :")
-        print("- Sélectionner un fichier CSV d'entraînement")
-        print("- Créer le modèle clustering_model.pkl")
-        print("- Valider le modèle pour l'analyse")
-        return
+    print("Méthode basée sur authIdPerson_i de l'API HAL")
+    print("="*60)
     
     # Sélectionner le fichier à analyser
     analysis_file = select_extraction_csv()
     
+    # Demander le fichier de laboratoire (optionnel)
+    print(f"\nFichier laboratoire (optionnel):")
+    print("Un fichier avec colonnes 'nom', 'prenom', 'unite_de_recherche'")
+    print("améliore la détection des homonymes.")
+    
+    use_lab_file = input("Utiliser un fichier laboratoire ? (o/n): ").lower()
+    laboratory_file = None
+    
+    if use_lab_file in ['o', 'oui', 'y', 'yes']:
+        try:
+            lab_files = [f for f in os.listdir('.') if f.endswith('.csv')]
+            if lab_files:
+                print("\nFichiers CSV disponibles:")
+                for i, file in enumerate(lab_files, 1):
+                    print(f"{i}. {file}")
+                
+                choice = int(input("Choisissez un fichier (numéro): "))
+                if 1 <= choice <= len(lab_files):
+                    laboratory_file = lab_files[choice - 1]
+                    print(f"Fichier laboratoire sélectionné: {laboratory_file}")
+            else:
+                print("Aucun fichier CSV trouvé dans le répertoire courant.")
+        except (ValueError, IndexError):
+            print("Choix invalide. Analyse sans fichier laboratoire.")
+    
     print(f"\nAnalyse du fichier: {os.path.basename(analysis_file)}")
-    print("Analyse en cours...")
+    if laboratory_file:
+        print(f"Fichier laboratoire: {laboratory_file}")
+    
+    print("\nAnalyse en cours... (patience requise - interrogation API HAL)")
     
     try:
-        # Lancer l'analyse
-        results = load_and_analyze_csv(analysis_file, 'clustering_model.pkl')
+        # Créer le détecteur et lancer l'analyse
+        detector = DuplicateHomonymDetector()
+        results = detector.analyze_csv_file(analysis_file, laboratory_file)
         
         # Afficher les résultats détaillés
-        display_analysis_results(results)
+        detector.display_results(results)
+        
+        # Sauvegarder les résultats
+        base_name = os.path.splitext(os.path.basename(analysis_file))[0]
+        results_file = f'detection_results_{base_name}.json'
+        
+        with open(results_file, 'w', encoding='utf-8') as f:
+            json.dump(results, f, indent=2, ensure_ascii=False, default=str)
+        
+        print(f"\nRésultats sauvegardés dans: {results_file}")
         
         # Proposer des actions
         propose_actions(results, analysis_file)
         
     except Exception as e:
         print(f"\nERREUR lors de l'analyse: {str(e)}")
-
-def display_analysis_results(results):
-    """
-    Affiche les résultats de l'analyse de manière détaillée
-    
-    Args:
-        results: Dictionnaire des résultats d'analyse
-    """
-    summary = results['summary']
-    
-    print(f"\n" + "="*60)
-    print("RÉSULTATS DE L'ANALYSE")
-    print("="*60)
-    
-    print(f"Publications analysées: {summary['total_publications']}")
-    print(f"Auteurs uniques: {summary['unique_authors']}")
-    print(f"Paires de doublons détectées: {summary['duplicate_pairs']}")
-    print(f"Paires d'homonymes détectées: {summary['homonym_pairs']}")
-    
-    # Afficher les doublons détectés
-    if results['duplicate_cases']:
-        print(f"\n" + "="*50)
-        print("DOUBLONS DÉTECTÉS")
-        print("="*50)
-        
-        for i, case in enumerate(results['duplicate_cases'][:5], 1):  # Limiter à 5 exemples
-            print(f"\n{i}. {case['author']} (Score: {case['similarity_score']:.3f})")
-            print(f"   Titre 1: {case['title1'][:70]}...")
-            print(f"   Titre 2: {case['title2'][:70]}...")
-            print(f"   Années: {case['year1']} / {case['year2']}")
-        
-        if len(results['duplicate_cases']) > 5:
-            print(f"\n... et {len(results['duplicate_cases']) - 5} autres doublons")
-    
-    # Afficher les homonymes détectés
-    if results['homonym_cases']:
-        print(f"\n" + "="*50)
-        print("HOMONYMES DÉTECTÉS")
-        print("="*50)
-        
-        for i, case in enumerate(results['homonym_cases'][:5], 1):  # Limiter à 5 exemples
-            print(f"\n{i}. {case['author']} (Écart: {case['year_gap']} ans)")
-            print(f"   Titre 1: {case['title1'][:70]}...")
-            print(f"   Titre 2: {case['title2'][:70]}...")
-            print(f"   Années: {case['year1']} / {case['year2']}")
-            print(f"   Score: {case['similarity_score']:.3f}")
-        
-        if len(results['homonym_cases']) > 5:
-            print(f"\n... et {len(results['homonym_cases']) - 5} autres homonymes")
 
 def propose_actions(results, analysis_file):
     """
@@ -424,7 +383,7 @@ def propose_actions(results, analysis_file):
 
 def treat_data_cli(results, analysis_file):
     """
-    Traite automatiquement les données problématiques
+    Traite automatiquement les données problématiques avec la nouvelle méthode
     
     Args:
         results: Dictionnaire des résultats d'analyse
@@ -437,14 +396,16 @@ def treat_data_cli(results, analysis_file):
     summary = results['summary']
     
     print(f"Impact du traitement:")
-    print(f"   • Doublons à supprimer: {summary['duplicate_pairs']} paires")
-    print(f"   • Homonymes à marquer: {summary['homonym_pairs']} paires")
+    print(f"   • Doublons à supprimer: {summary['duplicate_publications']} cas")
+    print(f"   • Homonymes détectés: {summary['homonym_publications']} cas")
+    print(f"   • Collaborations: {len(results['collaborator_cases'])} cas")
+    print(f"   • Multi-thèses: {summary['multi_thesis_publications']} cas")
     
     # Options de traitement
     print(f"\nOptions de traitement:")
     print(f"1. Supprimer les doublons uniquement")
-    print(f"2. Marquer les homonymes (ajouter une colonne)")
-    print(f"3. Traitement complet (doublons + homonymes)")
+    print(f"2. Supprimer doublons + collaborations")
+    print(f"3. Traitement complet (nettoyage maximal)")
     print(f"4. Traitement personnalisé")
     
     try:
@@ -455,29 +416,23 @@ def treat_data_cli(results, analysis_file):
         processed_df = original_df.copy()
         
         actions_performed = []
+        indices_to_remove = set()
         
-        if choice == 1 or choice == 3:  # Supprimer doublons
+        if choice == 1 or choice == 2 or choice == 3:  # Supprimer doublons
             if results['duplicate_cases']:
-                indices_to_remove = set()
                 for case in results['duplicate_cases']:
-                    indices_to_remove.add(case['index2'])  # Garder le premier
+                    indices_to_remove.add(case['publication2']['index'])
                 
-                processed_df = processed_df.drop(indices_to_remove).reset_index(drop=True)
-                actions_performed.append(f"Supprimé {len(indices_to_remove)} doublons")
+                actions_performed.append(f"Supprimé {len(results['duplicate_cases'])} doublons")
         
-        if choice == 2 or choice == 3:  # Marquer homonymes
-            if results['homonym_cases']:
-                processed_df['Homonyme_Potentiel'] = False
-                marked_count = 0
-                for case in results['homonym_cases']:
-                    if case['index1'] < len(processed_df):
-                        processed_df.loc[case['index1'], 'Homonyme_Potentiel'] = True
-                        marked_count += 1
-                    if case['index2'] < len(processed_df):
-                        processed_df.loc[case['index2'], 'Homonyme_Potentiel'] = True
-                        marked_count += 1
+        if choice == 2 or choice == 3:  # Supprimer collaborations
+            if results['collaborator_cases']:
+                for case in results['collaborator_cases']:
+                    collab_data = case['collaboration']['row_data']
+                    if hasattr(collab_data, 'name'):
+                        indices_to_remove.add(collab_data.name)
                 
-                actions_performed.append(f"Marqué {marked_count} publications comme homonymes potentiels")
+                actions_performed.append(f"Supprimé {len(results['collaborator_cases'])} collaborations")
         
         if choice == 4:  # Traitement personnalisé
             print(f"\nTraitement personnalisé:")
@@ -485,31 +440,26 @@ def treat_data_cli(results, analysis_file):
             if results['duplicate_cases']:
                 remove_dup = input("Supprimer les doublons ? (o/n): ").lower()
                 if remove_dup in ['o', 'oui', 'y', 'yes']:
-                    indices_to_remove = set()
                     for case in results['duplicate_cases']:
-                        indices_to_remove.add(case['index2'])
-                    
-                    processed_df = processed_df.drop(indices_to_remove).reset_index(drop=True)
-                    actions_performed.append(f"Supprimé {len(indices_to_remove)} doublons")
+                        indices_to_remove.add(case['publication2']['index'])
+                    actions_performed.append(f"Supprimé {len(results['duplicate_cases'])} doublons")
             
-            if results['homonym_cases']:
-                mark_hom = input("Marquer les homonymes ? (o/n): ").lower()
-                if mark_hom in ['o', 'oui', 'y', 'yes']:
-                    processed_df['Homonyme_Potentiel'] = False
-                    marked_count = 0
-                    for case in results['homonym_cases']:
-                        if case['index1'] < len(processed_df):
-                            processed_df.loc[case['index1'], 'Homonyme_Potentiel'] = True
-                            marked_count += 1
-                        if case['index2'] < len(processed_df):
-                            processed_df.loc[case['index2'], 'Homonyme_Potentiel'] = True
-                            marked_count += 1
-                    
-                    actions_performed.append(f"Marqué {marked_count} publications comme homonymes potentiels")
+            if results['collaborator_cases']:
+                remove_collab = input("Supprimer les collaborations ? (o/n): ").lower()
+                if remove_collab in ['o', 'oui', 'y', 'yes']:
+                    for case in results['collaborator_cases']:
+                        collab_data = case['collaboration']['row_data']
+                        if hasattr(collab_data, 'name'):
+                            indices_to_remove.add(collab_data.name)
+                    actions_performed.append(f"Supprimé {len(results['collaborator_cases'])} collaborations")
+        
+        # Supprimer les indices marqués
+        if indices_to_remove:
+            processed_df = processed_df.drop(indices_to_remove).reset_index(drop=True)
         
         # Sauvegarder le fichier traité
         base_name = os.path.splitext(os.path.basename(analysis_file))[0]
-        processed_filename = f"{base_name}_traite.csv"
+        processed_filename = f"{base_name}_nettoye.csv"
         processed_path = os.path.join('extraction', processed_filename)
         
         processed_df.to_csv(processed_path, index=False)
@@ -551,17 +501,62 @@ def export_results_cli(results, analysis_file):
         
         # Exporter les doublons
         if results['duplicate_cases']:
-            dup_df = pd.DataFrame(results['duplicate_cases'])
+            dup_df = pd.DataFrame([
+                {
+                    'Auteur': case['author'],
+                    'Type': case['type'],
+                    'Titre_1': case['publication1']['title'],
+                    'Titre_2': case['publication2']['title'],
+                    'Annee_1': case['publication1']['year'],
+                    'Annee_2': case['publication2']['year'],
+                    'Similarite': case['similarity_score'],
+                    'Ecart_ans': case['year_gap'],
+                    'Docid_1': case['publication1']['docid'],
+                    'Docid_2': case['publication2']['docid']
+                }
+                for case in results['duplicate_cases']
+            ])
             dup_path = os.path.join(export_dir, f'{base_name}_doublons.csv')
             dup_df.to_csv(dup_path, index=False)
             exported_files.append(dup_path)
         
         # Exporter les homonymes
         if results['homonym_cases']:
-            hom_df = pd.DataFrame(results['homonym_cases'])
+            hom_df = pd.DataFrame([
+                {
+                    'Auteur': case['author'],
+                    'Type': case['type'],
+                    'Titre_1': case['publication1']['title'],
+                    'Titre_2': case['publication2']['title'],
+                    'Annee_1': case['publication1']['year'],
+                    'Annee_2': case['publication2']['year'],
+                    'Domaine_1': case['publication1']['domain'],
+                    'Domaine_2': case['publication2']['domain'],
+                    'Laboratoire_1': case['publication1']['lab'],
+                    'Laboratoire_2': case['publication2']['lab']
+                }
+                for case in results['homonym_cases']
+            ])
             hom_path = os.path.join(export_dir, f'{base_name}_homonymes.csv')
             hom_df.to_csv(hom_path, index=False)
             exported_files.append(hom_path)
+        
+        # Exporter les collaborations
+        if results['collaborator_cases']:
+            collab_df = pd.DataFrame([
+                {
+                    'Auteur': case['author'],
+                    'Type': case['type'],
+                    'These_principale_annee': case['main_thesis']['row_data']['Année de Publication'],
+                    'These_principale_titre': case['main_thesis']['row_data']['Titre'],
+                    'Collaboration_annee': case['collaboration']['row_data']['Année de Publication'],
+                    'Collaboration_titre': case['collaboration']['row_data']['Titre']
+                }
+                for case in results['collaborator_cases']
+            ])
+            collab_path = os.path.join(export_dir, f'{base_name}_collaborations.csv')
+            collab_df.to_csv(collab_path, index=False)
+            exported_files.append(collab_path)
         
         # Exporter le résumé
         summary_path = os.path.join(export_dir, f'{base_name}_resume.txt')
@@ -570,10 +565,22 @@ def export_results_cli(results, analysis_file):
             f.write("RÉSUMÉ DE L'ANALYSE\n")
             f.write("="*50 + "\n\n")
             f.write(f"Fichier analysé: {os.path.basename(analysis_file)}\n")
-            f.write(f"Publications analysées: {summary['total_publications']}\n")
-            f.write(f"Auteurs uniques: {summary['unique_authors']}\n")
-            f.write(f"Paires de doublons: {summary['duplicate_pairs']}\n")
-            f.write(f"Paires d'homonymes: {summary['homonym_pairs']}\n")
+            f.write(f"Date d'analyse: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            f.write("STATISTIQUES GLOBALES:\n")
+            f.write(f"Publications totales: {summary['total_publications']}\n")
+            f.write(f"Auteurs avec publications multiples: {summary['authors_with_multiple_pubs']}\n\n")
+            f.write("DÉTECTIONS:\n")
+            f.write(f"Doublons: {summary['duplicate_publications']}\n")
+            f.write(f"Homonymes: {summary['homonym_publications']}\n")
+            f.write(f"Multi-thèses: {summary['multi_thesis_publications']}\n")
+            f.write(f"Collaborations: {len(results['collaborator_cases'])}\n")
+            f.write(f"Problèmes techniques: {len(results['no_authid_cases'])}\n\n")
+            f.write("MÉTHODE UTILISÉE:\n")
+            f.write("• Algorithme basé sur authIdPerson_i de HAL\n")
+            f.write("• Seuil de similarité des titres: 0.8\n")
+            f.write("• Seuil d'écart temporel: 2 ans\n")
+            f.write("• Détection automatique des collaborations\n")
+            f.write("• Gestion robuste des cas sans authIdPerson_i\n")
         
         exported_files.append(summary_path)
         
@@ -604,8 +611,8 @@ def display_detailed_results(results):
         for i, case in enumerate(results['duplicate_cases'], 1):
             print(f"\n{i:2d}. {case['author']}")
             print(f"    Score: {case['similarity_score']:.3f}")
-            print(f"    Titre 1 ({case['year1']}): {case['title1']}")
-            print(f"    Titre 2 ({case['year2']}): {case['title2']}")
+            print(f"    Titre 1 ({case['publication1']['year']}): {case['publication1']['title']}")
+            print(f"    Titre 2 ({case['publication2']['year']}): {case['publication2']['title']}")
     
     # Afficher tous les homonymes
     if results['homonym_cases']:
@@ -613,12 +620,12 @@ def display_detailed_results(results):
         print("-" * 50)
         for i, case in enumerate(results['homonym_cases'], 1):
             print(f"\n{i:2d}. {case['author']}")
-            print(f"    Écart: {case['year_gap']} ans, Score: {case['similarity_score']:.3f}")
-            print(f"    Titre 1 ({case['year1']}): {case['title1']}")
-            print(f"    Titre 2 ({case['year2']}): {case['title2']}")
+            print(f"    Domaines: {case['publication1']['domain']} / {case['publication2']['domain']}")
+            print(f"    Titre 1 ({case['publication1']['year']}): {case['publication1']['title']}")
+            print(f"    Titre 2 ({case['publication2']['year']}): {case['publication2']['title']}")
 
-def add_clustering_arguments(parser):
-    """Ajoute les arguments pour le clustering"""
+def add_detection_arguments(parser):
+    """Ajoute les arguments pour la détection de doublons et homonymes"""
     
     parser.add_argument(
         "--analyse",
@@ -632,7 +639,7 @@ def main():
     HAL data extraction and analysis workflow.
     
     Supports filtering by year, domain, document type, configurable name matching
-    sensitivity, automatic generation of graphs and reports, and clustering analysis.
+    sensitivity, automatic generation of graphs and reports, and duplicate/homonym detection.
     """
     parser = argparse.ArgumentParser(
         description=(
@@ -643,11 +650,10 @@ def main():
             "- 'Thèse (Doctorant)' : PhD theses only (THESE documents)\n"
             "- 'Thèse (HDR)' : HDR theses only (HDR documents)\n"
             "- 'Thèse' : Both PhD and HDR theses (THESE + HDR documents)\n\n"
-            "CLUSTERING ANALYSIS:\n"
-            "- Analyze CSV files with pre-trained machine learning models\n"
+            "DETECTION ANALYSIS:\n"
+            "- Analyze CSV files with authIdPerson_i based method\n"
             "- Detect duplicates and homonyms automatically\n"
             "- Clean data and export results\n\n"
-            "NOTE: To train a new model, use: python train_model.py\n"
             "IMPORTANT: The system uses double queries (prenom nom + nom prenom) for better results."
         ),
         epilog=(
@@ -657,10 +663,8 @@ def main():
             'python main.py --type "Thèse" --threshold 1\n'
             'python main.py --threshold 3 --reportpdf\n'
             'python main.py --graphs --reportpdf --reportlatex\n\n'
-            'Clustering analysis examples:\n'
+            'Detection analysis examples:\n'
             'python main.py --analyse\n\n'
-            'Model training (separate script):\n'
-            'python train_model.py\n\n'
             'To see available types and sensitivity levels:\n'
             'python main.py --list-types\n'
             'python main.py --list-sensitivity'
@@ -734,13 +738,13 @@ def main():
         action="store_true"
     )
 
-    # Ajouter les arguments pour le clustering
-    add_clustering_arguments(parser)
+    # Ajouter les arguments pour la détection
+    add_detection_arguments(parser)
 
     global args
     args = parser.parse_args()
 
-    # Gérer l'option d'analyse de clustering
+    # Gérer l'option d'analyse de détection
     if args.analyse:
         print("Mode analyse des doublons et homonymes activé")
         analyze_csv_cli()

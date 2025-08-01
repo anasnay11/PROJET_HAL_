@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# app.py
+# app.py 
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, Toplevel, Listbox, MULTIPLE, ttk
@@ -15,9 +15,9 @@ from utils import generate_filename
 from config import get_threshold_from_level, get_level_from_threshold, list_sensitivity_levels, DEFAULT_THRESHOLD
 from dashboard_generator import create_dashboard
 from report_generator_app import generate_pdf_report, generate_latex_report
-from clustering_model import load_and_analyze_csv
 import threading
 import time
+import subprocess
 from graphics import (
     plot_publications_by_year,
     plot_document_types,
@@ -30,6 +30,8 @@ from graphics import (
     plot_theses_hdr_by_year,
     plot_theses_keywords_wordcloud,
 )
+from detection_doublons_homonymes import DuplicateHomonymDetector
+from integration import detection_doublons_homonymes
 
 # Global variables to store the loaded CSV file path
 current_csv_file = None
@@ -51,7 +53,7 @@ progress_bar = None
 current_threshold = DEFAULT_THRESHOLD
 settings_file = "app_settings.json"
 
-# Global variables for clustering
+# Global variables for new detection method
 analysis_results = None
 
 def load_settings():
@@ -625,524 +627,12 @@ def stop_extraction_task():
             "vous devrez relancer une nouvelle extraction."
         )
 
-def check_model_status():
-    """
-    Vérifie le statut du modèle de clustering
-    
-    Returns:
-        tuple: (model_exists, model_info)
-    """
-    model_path = 'clustering_model.pkl'
-    
-    if not os.path.exists(model_path):
-        return False, "Aucun modèle trouvé"
-    
-    try:
-        # Charger temporairement le modèle pour obtenir les infos
-        from clustering_model import DuplicateHomonymClusteringModel
-        temp_model = DuplicateHomonymClusteringModel()
-        temp_model.load_model(model_path)
-        
-        model_info = {
-            'total_publications': temp_model.training_stats['total_publications'],
-            'duplicate_clusters': temp_model.training_stats['duplicate_clusters'],
-            'homonym_clusters': temp_model.training_stats['homonym_clusters']
-        }
-        
-        return True, model_info
-        
-    except Exception as e:
-        return False, f"Erreur lors du chargement: {str(e)}"
-
 def detection_doublons_homonymes():
-    """
-    Ouvre la fenêtre principale de détection des doublons et homonymes
-    Version mise à jour sans possibilité d'entraînement
-    """
-    global analysis_results
+    from integration import detection_doublons_homonymes as nouvelle_detection
+    nouvelle_detection()
     
-    # Créer la fenêtre principale
-    detection_window = Toplevel(root)
-    detection_window.title("Détection Doublons & Homonymes")
-    detection_window.geometry("700x600")
-    detection_window.resizable(True, True)
-    
-    # Titre
-    title_label = tk.Label(detection_window, text="Détection Doublons & Homonymes", 
-                          font=("Helvetica", 18, "bold"))
-    title_label.pack(pady=15)
-    
-    # Séparateur
-    ttk.Separator(detection_window, orient="horizontal").pack(fill="x", padx=20, pady=10)
-    
-    # Frame pour les informations sur le modèle
-    model_info_frame = tk.Frame(detection_window, relief="ridge", bd=2, bg="#f0f0f0")
-    model_info_frame.pack(fill="x", padx=20, pady=10)
-    
-    # Vérifier si le modèle existe
-    model_exists, model_info = check_model_status()
-    
-    if model_exists and isinstance(model_info, dict):
-        model_info_text = f"Modèle entraîné disponible\n"
-        model_info_text += f"Entraîné sur {model_info['total_publications']} publications\n"
-        model_info_text += f"{model_info['duplicate_clusters']} clusters de doublons détectés\n"
-        model_info_text += f"{model_info['homonym_clusters']} clusters d'homonymes détectés"
-        model_status = "PRÊT"
-    elif model_exists:
-        model_info_text = f"Erreur avec le modèle: {model_info}"
-        model_status = "ERREUR"
-    else:
-        model_info_text = "Aucun modèle entraîné trouvé\n"
-        model_info_text += "Vous devez d'abord entraîner un modèle.\n"
-        model_info_text += "Utilisez le script: python train_model.py"
-        model_status = "NON_ENTRAINÉ"
-                               
-    model_info_label = tk.Label(model_info_frame, text=model_info_text, 
-                               font=("Helvetica", 11), justify="left", bg="#f0f0f0")
-    model_info_label.pack(pady=10, padx=15)
-    
-    # Frame pour les boutons principaux
-    main_buttons_frame = tk.Frame(detection_window)
-    main_buttons_frame.pack(pady=20)
-    
-    def analyser_fichier():
-        """Lance l'analyse d'un fichier CSV"""
-        
-        # Sélectionner le fichier à analyser
-        analysis_file = filedialog.askopenfilename(
-            title="Sélectionner un fichier CSV à analyser",
-            filetypes=[("Fichiers CSV", "*.csv"), ("Tous les fichiers", "*.*")],
-            initialdir="extraction"
-        )
-        
-        if not analysis_file:
-            return
-        
-        # Créer la fenêtre d'analyse
-        analysis_window = Toplevel(detection_window)
-        analysis_window.title("Analyse des Doublons & Homonymes")
-        analysis_window.geometry("800x700")
-        analysis_window.transient(detection_window)
-        analysis_window.grab_set()
-        
-        # Titre
-        tk.Label(analysis_window, text="Analyse des Doublons & Homonymes", 
-                font=("Helvetica", 16, "bold")).pack(pady=10)
-        
-        # Informations sur le fichier
-        tk.Label(analysis_window, text=f"Fichier analysé: {os.path.basename(analysis_file)}", 
-                font=("Helvetica", 10, "italic")).pack(pady=5)
-        
-        # Notebook pour organiser les résultats
-        results_notebook = ttk.Notebook(analysis_window)
-        results_notebook.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        # Onglet Résumé
-        summary_frame = ttk.Frame(results_notebook)
-        results_notebook.add(summary_frame, text="Résumé")
-        
-        # Onglet Doublons
-        duplicates_frame = ttk.Frame(results_notebook)
-        results_notebook.add(duplicates_frame, text="Doublons")
-        
-        # Onglet Homonymes
-        homonyms_frame = ttk.Frame(results_notebook)
-        results_notebook.add(homonyms_frame, text="Homonymes")
-        
-        # Barre de progression
-        progress_var = tk.StringVar()
-        progress_var.set("Préparation de l'analyse...")
-        progress_label = tk.Label(analysis_window, textvariable=progress_var, 
-                                 font=("Helvetica", 10))
-        progress_label.pack(pady=5)
-        
-        progress_bar = ttk.Progressbar(analysis_window, mode='indeterminate')
-        progress_bar.pack(pady=5, fill="x", padx=20)
-        
-        # Boutons d'action
-        action_frame = tk.Frame(analysis_window)
-        action_frame.pack(side="bottom", pady=10)
-        
-        def lancer_analyse():
-            """Lance l'analyse dans un thread séparé"""
-            def analysis_thread():
-                global analysis_results
-                
-                try:
-                    # Démarrer la barre de progression
-                    progress_bar.start()
-                    progress_var.set("Analyse en cours...")
-                    
-                    # Lancer l'analyse
-                    analysis_results = load_and_analyze_csv(analysis_file, 'clustering_model.pkl')
-                    
-                    # Afficher les résultats dans l'onglet Résumé
-                    summary_text = tk.Text(summary_frame, font=("Courier", 10), wrap="word")
-                    summary_text.pack(fill="both", expand=True, padx=5, pady=5)
-                    
-                    summary = analysis_results['summary']
-                    summary_content = f"""
-RÉSUMÉ DE L'ANALYSE
-{'='*50}
-
-Publications analysées: {summary['total_publications']}
-Auteurs uniques: {summary['unique_authors']}
-Paires de doublons détectées: {summary['duplicate_pairs']}
-Paires d'homonymes détectées: {summary['homonym_pairs']}
-
-{'='*50}
-Analyse terminée avec succès!
-                    """
-                    
-                    summary_text.insert(tk.END, summary_content)
-                    summary_text.config(state="disabled")
-                    
-                    # Afficher les doublons
-                    if analysis_results['duplicate_cases']:
-                        dup_tree = ttk.Treeview(duplicates_frame, 
-                                              columns=('Auteur', 'Score', 'Titre1', 'Titre2', 'Années'), 
-                                              show='headings')
-                        dup_tree.heading('Auteur', text='Auteur')
-                        dup_tree.heading('Score', text='Score')
-                        dup_tree.heading('Titre1', text='Titre 1')
-                        dup_tree.heading('Titre2', text='Titre 2')
-                        dup_tree.heading('Années', text='Années')
-                        
-                        for case in analysis_results['duplicate_cases']:
-                            dup_tree.insert('', 'end', values=(
-                                case['author'],
-                                f"{case['similarity_score']:.3f}",
-                                case['title1'][:50] + "..." if len(case['title1']) > 50 else case['title1'],
-                                case['title2'][:50] + "..." if len(case['title2']) > 50 else case['title2'],
-                                f"{case['year1']} / {case['year2']}"
-                            ))
-                        
-                        dup_tree.pack(fill="both", expand=True, padx=5, pady=5)
-                    else:
-                        tk.Label(duplicates_frame, text="Aucun doublon détecté", 
-                                font=("Helvetica", 12)).pack(pady=50)
-                    
-                    # Afficher les homonymes
-                    if analysis_results['homonym_cases']:
-                        hom_tree = ttk.Treeview(homonyms_frame, 
-                                              columns=('Auteur', 'Écart', 'Titre1', 'Titre2', 'Score'), 
-                                              show='headings')
-                        hom_tree.heading('Auteur', text='Auteur')
-                        hom_tree.heading('Écart', text='Écart (ans)')
-                        hom_tree.heading('Titre1', text='Titre 1')
-                        hom_tree.heading('Titre2', text='Titre 2')
-                        hom_tree.heading('Score', text='Score')
-                        
-                        for case in analysis_results['homonym_cases']:
-                            hom_tree.insert('', 'end', values=(
-                                case['author'],
-                                f"{case['year_gap']}",
-                                case['title1'][:50] + "..." if len(case['title1']) > 50 else case['title1'],
-                                case['title2'][:50] + "..." if len(case['title2']) > 50 else case['title2'],
-                                f"{case['similarity_score']:.3f}"
-                            ))
-                        
-                        hom_tree.pack(fill="both", expand=True, padx=5, pady=5)
-                    else:
-                        tk.Label(homonyms_frame, text="Aucun homonyme détecté", 
-                                font=("Helvetica", 12)).pack(pady=50)
-                    
-                    # Activer les boutons d'action
-                    btn_traiter.config(state="normal")
-                    btn_exporter.config(state="normal")
-                    
-                    progress_var.set("Analyse terminée avec succès!")
-                    
-                except Exception as e:
-                    # Afficher l'erreur
-                    error_text = tk.Text(summary_frame, font=("Courier", 10), wrap="word")
-                    error_text.pack(fill="both", expand=True, padx=5, pady=5)
-                    error_text.insert(tk.END, f"ERREUR lors de l'analyse:\n{str(e)}")
-                    error_text.config(state="disabled")
-                    
-                    progress_var.set("Erreur lors de l'analyse")
-                    
-                finally:
-                    progress_bar.stop()
-            
-            # Lancer dans un thread séparé
-            thread = threading.Thread(target=analysis_thread)
-            thread.start()
-        
-        def traiter_donnees():
-            """Traite les données problématiques"""
-            if not analysis_results:
-                messagebox.showerror("Erreur", "Aucune analyse disponible.")
-                return
-            
-            # Créer une fenêtre de traitement
-            treatment_window = Toplevel(analysis_window)
-            treatment_window.title("Traitement des Données")
-            treatment_window.geometry("600x450")
-            treatment_window.transient(analysis_window)
-            treatment_window.grab_set()
-            
-            # Titre
-            tk.Label(treatment_window, text="Traitement des Données Problématiques", 
-                    font=("Helvetica", 14, "bold")).pack(pady=10)
-            
-            # Options de traitement
-            treatment_frame = tk.Frame(treatment_window)
-            treatment_frame.pack(fill="both", expand=True, padx=20, pady=10)
-            
-            # Variables pour les options
-            remove_duplicates = tk.BooleanVar(value=True)
-            flag_homonyms = tk.BooleanVar(value=True)
-            
-            # Checkboxes
-            tk.Label(treatment_frame, text="Choisissez les actions à effectuer:", 
-                    font=("Helvetica", 12, "bold")).pack(anchor="w", pady=(0, 10))
-            
-            tk.Checkbutton(treatment_frame, text="Supprimer les doublons détectés", 
-                          variable=remove_duplicates, font=("Helvetica", 11)).pack(anchor="w", pady=2)
-            
-            tk.Checkbutton(treatment_frame, text="Marquer les homonymes (ajouter une colonne)", 
-                          variable=flag_homonyms, font=("Helvetica", 11)).pack(anchor="w", pady=2)
-            
-            # Statistiques
-            stats_frame = tk.Frame(treatment_frame, relief="ridge", bd=2, bg="#f8f8f8")
-            stats_frame.pack(fill="x", pady=20)
-            
-            summary = analysis_results['summary']
-            stats_text = f"""
-Impact du traitement:
-   • Doublons à supprimer: {summary['duplicate_pairs']} paires
-   • Homonymes à marquer: {summary['homonym_pairs']} paires
-            """
-            
-            tk.Label(stats_frame, text=stats_text, font=("Helvetica", 10), 
-                    justify="left", bg="#f8f8f8").pack(pady=10, padx=10)
-            
-            # Boutons
-            button_frame = tk.Frame(treatment_window)
-            button_frame.pack(side="bottom", pady=10)
-            
-            def appliquer_traitement():
-                """Applique le traitement sélectionné"""
-                try:
-                    # Charger les données originales
-                    original_df = pd.read_csv(analysis_file)
-                    processed_df = original_df.copy()
-                    
-                    # Supprimer les doublons
-                    if remove_duplicates.get():
-                        indices_to_remove = set()
-                        for case in analysis_results['duplicate_cases']:
-                            # Garder le premier, supprimer le second
-                            indices_to_remove.add(case['index2'])
-                        
-                        processed_df = processed_df.drop(indices_to_remove).reset_index(drop=True)
-                    
-                    # Marquer les homonymes
-                    if flag_homonyms.get():
-                        processed_df['Homonyme_Potentiel'] = False
-                        for case in analysis_results['homonym_cases']:
-                            if case['index1'] < len(processed_df):
-                                processed_df.loc[case['index1'], 'Homonyme_Potentiel'] = True
-                            if case['index2'] < len(processed_df):
-                                processed_df.loc[case['index2'], 'Homonyme_Potentiel'] = True
-                    
-                    # Sauvegarder le fichier traité
-                    base_name = os.path.splitext(os.path.basename(analysis_file))[0]
-                    processed_filename = f"{base_name}_traite.csv"
-                    processed_path = os.path.join('extraction', processed_filename)
-                    
-                    processed_df.to_csv(processed_path, index=False)
-                    
-                    # Message de succès
-                    messagebox.showinfo(
-                        "Traitement terminé",
-                        f"Données traitées avec succès!\n\n"
-                        f"Fichier original: {len(original_df)} publications\n"
-                        f"Fichier traité: {len(processed_df)} publications\n"
-                        f"Publications supprimées: {len(original_df) - len(processed_df)}\n\n"
-                        f"Sauvegardé dans: {processed_path}"
-                    )
-                    
-                    treatment_window.destroy()
-                    
-                except Exception as e:
-                    messagebox.showerror("Erreur", f"Erreur lors du traitement: {str(e)}")
-            
-            tk.Button(button_frame, text="Annuler", 
-                     command=treatment_window.destroy, font=("Helvetica", 11),
-                     width=12).pack(side="left", padx=5)
-            
-            tk.Button(button_frame, text="Appliquer le traitement", 
-                     command=appliquer_traitement, font=("Helvetica", 11, "bold"),
-                     bg="#4CAF50", fg="white", width=20).pack(side="right", padx=5)
-        
-        def exporter_resultats():
-            """Exporte les résultats de l'analyse"""
-            if not analysis_results:
-                messagebox.showerror("Erreur", "Aucune analyse disponible.")
-                return
-            
-            # Choisir le dossier d'exportation
-            export_dir = filedialog.askdirectory(
-                title="Choisir le dossier d'exportation",
-                initialdir="extraction"
-            )
-            
-            if export_dir:
-                try:
-                    exported_files = []
-                    
-                    # Exporter les doublons
-                    if analysis_results['duplicate_cases']:
-                        dup_df = pd.DataFrame(analysis_results['duplicate_cases'])
-                        dup_path = os.path.join(export_dir, 'doublons_detectes.csv')
-                        dup_df.to_csv(dup_path, index=False)
-                        exported_files.append('doublons_detectes.csv')
-                    
-                    # Exporter les homonymes
-                    if analysis_results['homonym_cases']:
-                        hom_df = pd.DataFrame(analysis_results['homonym_cases'])
-                        hom_path = os.path.join(export_dir, 'homonymes_detectes.csv')
-                        hom_df.to_csv(hom_path, index=False)
-                        exported_files.append('homonymes_detectes.csv')
-                    
-                    # Exporter le résumé
-                    summary_path = os.path.join(export_dir, 'resume_analyse.txt')
-                    with open(summary_path, 'w', encoding='utf-8') as f:
-                        summary = analysis_results['summary']
-                        f.write("RÉSUMÉ DE L'ANALYSE\n")
-                        f.write("="*50 + "\n\n")
-                        f.write(f"Publications analysées: {summary['total_publications']}\n")
-                        f.write(f"Auteurs uniques: {summary['unique_authors']}\n")
-                        f.write(f"Paires de doublons: {summary['duplicate_pairs']}\n")
-                        f.write(f"Paires d'homonymes: {summary['homonym_pairs']}\n")
-                    
-                    exported_files.append('resume_analyse.txt')
-                    
-                    # Message de succès
-                    files_list = '\n'.join([f"   • {f}" for f in exported_files])
-                    messagebox.showinfo(
-                        "Exportation terminée",
-                        f"Résultats exportés avec succès:\n\n{files_list}\n\nDans le dossier:\n{export_dir}"
-                    )
-                    
-                except Exception as e:
-                    messagebox.showerror("Erreur", f"Erreur lors de l'exportation: {str(e)}")
-        
-        # Boutons d'action
-        btn_analyser = tk.Button(action_frame, text="Lancer l'analyse", 
-                                command=lancer_analyse, font=("Helvetica", 11, "bold"),
-                                bg="#4CAF50", fg="white", width=15)
-        btn_analyser.pack(side="left", padx=5)
-        
-        btn_traiter = tk.Button(action_frame, text="Traiter les données", 
-                               command=traiter_donnees, font=("Helvetica", 11),
-                               bg="#FF9800", fg="white", width=18, state="disabled")
-        btn_traiter.pack(side="left", padx=5)
-        
-        btn_exporter = tk.Button(action_frame, text="Exporter résultats", 
-                                command=exporter_resultats, font=("Helvetica", 11),
-                                bg="#2196F3", fg="white", width=15, state="disabled")
-        btn_exporter.pack(side="left", padx=5)
-        
-        btn_fermer = tk.Button(action_frame, text="Fermer", 
-                              command=analysis_window.destroy, font=("Helvetica", 11),
-                              width=10)
-        btn_fermer.pack(side="right", padx=5)
-        
-        # Lancer automatiquement l'analyse
-        lancer_analyse()
-    
-    def ouvrir_script_entrainement():
-        """Ouvre une fenêtre d'information pour l'entraînement"""
-        info_window = Toplevel(detection_window)
-        info_window.title("Entraînement du Modèle")
-        info_window.geometry("500x400")
-        info_window.transient(detection_window)
-        info_window.grab_set()
-        
-        # Titre
-        tk.Label(info_window, text="Entraînement du Modèle", 
-                font=("Helvetica", 16, "bold")).pack(pady=15)
-        
-        # Instructions
-        instructions_text = """
-Pour créer ou mettre à jour le modèle de clustering, 
-vous devez utiliser le script d'entraînement dédié.
-
-ÉTAPES À SUIVRE :
-
-1. Fermez cette interface graphique
-
-2. Ouvrez un terminal/invite de commandes
-
-3. Naviguez vers le dossier du projet
-
-4. Exécutez la commande :
-   python train_model.py
-
-5. Suivez les instructions pour :
-   • Sélectionner un fichier CSV d'entraînement
-   • Confirmer les paramètres
-   • Attendre la fin de l'entraînement
-
-6. Une fois terminé, relancez cette interface :
-   python app.py
-
-Le modèle sera alors disponible pour l'analyse.
-
-RECOMMANDATIONS :
-
-• Utilisez un fichier CSV avec des cas variés
-• Minimum 500-1000 publications
-• Données de qualité avec auteurs divers
-        """
-        
-        text_widget = tk.Text(info_window, font=("Helvetica", 10), wrap="word",
-                             relief="flat", bg="#f8f8f8", padx=10, pady=10)
-        text_widget.pack(fill="both", expand=True, padx=15, pady=10)
-        text_widget.insert("1.0", instructions_text)
-        text_widget.config(state="disabled")
-        
-        # Bouton fermer
-        tk.Button(info_window, text="Compris", command=info_window.destroy,
-                 font=("Helvetica", 11, "bold"), bg="#4CAF50", fg="white",
-                 width=15).pack(pady=15)
-    
-    # Affichage des boutons selon le statut du modèle
-    if model_status == "PRÊT":
-        btn_analyser = tk.Button(main_buttons_frame, text="Charger un fichier CSV et Analyser", 
-                                command=analyser_fichier, font=("Helvetica", 14, "bold"),
-                                bg="#4CAF50", fg="white", width=30, height=2)
-        btn_analyser.pack(pady=10)
-        
-        btn_info_modele = tk.Button(main_buttons_frame, text="Comment ré-entraîner le modèle ?", 
-                                   command=ouvrir_script_entrainement, font=("Helvetica", 11),
-                                   bg="#FF9800", fg="white", width=25)
-        btn_info_modele.pack(pady=5)
-        
-    else:
-        btn_info_entrainement = tk.Button(main_buttons_frame, text="Comment entraîner le modèle ?", 
-                                         command=ouvrir_script_entrainement, font=("Helvetica", 14, "bold"),
-                                         bg="#2196F3", fg="white", width=30, height=2)
-        btn_info_entrainement.pack(pady=10)
-        
-        btn_analyser_disabled = tk.Button(main_buttons_frame, text="Analyser un fichier CSV", 
-                                         command=lambda: messagebox.showwarning("Modèle requis", 
-                                                                                "Veuillez d'abord entraîner un modèle avec train_model.py"), 
-                                         font=("Helvetica", 11),
-                                         bg="#9E9E9E", fg="white", width=25, state="disabled")
-        btn_analyser_disabled.pack(pady=5)
-    
-    # Bouton fermer
-    btn_fermer = tk.Button(detection_window, text="Fermer", 
-                          command=detection_window.destroy, font=("Helvetica", 11),
-                          width=15)
-    btn_fermer.pack(side="bottom", pady=10)
-
 def create_detection_tab():
-    """Crée l'onglet de détection des doublons et homonymes"""
+    """Crée l'onglet de détection des doublons et homonymes - VERSION MISE À JOUR"""
     
     # Créer le frame pour l'onglet détection
     global frame_detection
@@ -1152,8 +642,7 @@ def create_detection_tab():
     # Titre
     label_detection = tk.Label(
         frame_detection,
-        text="Détection Doublons & Homonymes\n"
-             "Modèle de clustering intelligent pour identifier les problèmes dans vos extractions",
+        text="Détection Doublons & Homonymes\n",
         font=("Helvetica", 16)
     )
     label_detection.pack(pady=20)
@@ -1161,77 +650,49 @@ def create_detection_tab():
     # Séparateur
     ttk.Separator(frame_detection, orient="horizontal").pack(fill="x", padx=20, pady=10)
     
-    # Informations sur le modèle
-    info_text = """
-MODÈLE DE CLUSTERING INTELLIGENT :
-
-• Détection automatique des doublons (publications identiques référencées plusieurs fois)
-• Identification des homonymes (même nom, personnes différentes)
-• Algorithmes de machine learning (DBSCAN, Hierarchical Clustering)
-• Analyse sur vos données spécifiques
-
-FONCTIONNALITÉS :
-
-• Analyse automatique de fichiers CSV
-• Interface détaillée avec onglets (Résumé, Doublons, Homonymes)
-• Traitement automatique des données problématiques
-• Exportation des résultats d'analyse
-
-WORKFLOW RECOMMANDÉ :
-
-1. Entraîner le modèle avec train_model.py (une seule fois)
-2. Analyser vos fichiers CSV avec le modèle entraîné
-3. Consulter les résultats détaillés par catégorie
-4. Traiter automatiquement les données problématiques
-5. Exporter les résultats ou utiliser les fichiers nettoyés
-
-ENTRAÎNEMENT DU MODÈLE :
-
-Pour créer ou mettre à jour le modèle, utilisez :
-python train_model.py
-
-Ce script séparé vous permet de choisir vos données d'entraînement
-et de créer un modèle optimisé pour vos besoins.
-    """
-    
-    info_label = tk.Label(frame_detection, text=info_text, 
-                         font=("Helvetica", 11), justify="left",
-                         relief="ridge", bd=1, bg="#f8f8f8")
-    info_label.pack(pady=10, padx=20, fill="x")
-    
-    # Bouton principal
+    # Bouton principal - PREMIER ET PLUS VISIBLE
     btn_detection = tk.Button(
         frame_detection, 
-        text="Ouvrir la Détection Doublons & Homonymes", 
+        text="Lancer la Détection", 
         font=("Helvetica", 14, "bold"),
         command=detection_doublons_homonymes,
-        bg="#9C27B0", 
+        bg="#4CAF50", 
         fg="white",
         width=35,
         height=2
     )
     btn_detection.pack(pady=20)
     
+    # Informations sur la méthode
+    info_text = """
+MÉTHODE Basée sur :
+
+• Groupement par (nom, prénom) des publications multiples
+• Requête API HAL
+• Distinction précise basée sur les identifiants HAL uniques
+• Détection des collaborations vs thèses principales
+    """
+    
+    info_label = tk.Label(frame_detection, text=info_text, 
+                         font=("Helvetica", 10), justify="left",
+                         relief="ridge", bd=1, bg="#e8f5e8")
+    info_label.pack(pady=10, padx=20, fill="x")
+
+    
     # Informations techniques
     tech_text = """
-INFORMATIONS TECHNIQUES :
+INSTRUCTIONS D'UTILISATION :
 
-• Utilise scikit-learn pour le machine learning
-• TF-IDF pour l'analyse des titres
-• Normalisation et réduction de dimensionnalité (PCA)
-• Matrice de similarité personnalisée pour les auteurs
-• Modèle persistant et réutilisable (clustering_model.pkl)
-
-CONSEILS :
-
-• Entraînez le modèle sur un fichier CSV avec des cas variés
-• Plus le fichier d'entraînement est grand, meilleur est le modèle
-• Le modèle s'améliore avec des données de qualité
-• Testez sur différents types de publications (articles, thèses, etc.)
+1. Préparez votre fichier CSV d'extraction (format standard de l'application)
+2. Optionnel: fichier laboratoire pour améliorer précision homonymes
+3. Lancez l'analyse 
+4. Examinez résultats dans les onglets spécialisés
+5. Utilisez traitement automatique pour nettoyer les données
+6. Exportez résultats pour documentation et archivage
     """
     
     tech_label = tk.Label(frame_detection, text=tech_text, 
-                         font=("Helvetica", 10), justify="left",
+                         font=("Helvetica", 9), justify="left",
                          fg="gray")
     tech_label.pack(pady=10, padx=20, fill="x")
 
@@ -1432,7 +893,7 @@ def generer_rapport():
 
 # Main interface
 root = tk.Tk()
-root.title("Outil d'Extraction et Analyse - API HAL")
+root.title("Outil d'Extraction et Analyse - API HAL - Version Améliorée")
 root.geometry("700x600")
 
 # Load settings at startup
