@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Jul 30 13:00:39 2025
-
-@author: Anas Nay
-"""
-
 # detection_doublons_homonymes.py
 # -*- coding: utf-8 -*-
 
@@ -15,6 +8,7 @@ Détection des doublons et homonymes basée sur authIdPerson_i
 import pandas as pd
 import requests
 import time
+import sys
 from difflib import SequenceMatcher
 from collections import defaultdict
 import re
@@ -27,9 +21,14 @@ class DuplicateHomonymDetector:
     """
     
     def __init__(self):
-        self.api_delay = 0.1  # Délai entre les requêtes API
+        self.api_delay = 0.05  # Délai entre les requêtes API - réduit pour accélérer
         self.similarity_threshold = 0.8  # Seuil de similarité des titres
         self.year_gap_threshold = 2  # Écart maximal d'années pour doublons
+        self.stop_requested = False  # NOUVEAU: Flag d'arrêt pour cette instance
+    
+    def set_stop_flag(self, stop_flag):
+        """Définit le flag d'arrêt pour cette instance"""
+        self.stop_requested = stop_flag
         
     def extract_main_title(self, title_field):
         """Extrait le titre principal d'un champ titre HAL"""
@@ -67,6 +66,7 @@ class DuplicateHomonymDetector:
     def query_hal_by_docid(self, docid: str) -> Optional[Dict]:
         """
         Interroge l'API HAL avec un docid spécifique
+        MODIFIÉ: Ajout de vérification d'arrêt
         
         Args:
             docid: ID du document HAL
@@ -74,6 +74,10 @@ class DuplicateHomonymDetector:
         Returns:
             Dict contenant les informations du document ou None
         """
+        # Vérifier l'arrêt avant chaque requête API
+        if self.stop_requested:
+            return None
+            
         if not docid or docid == "Id non disponible":
             return None
             
@@ -125,6 +129,7 @@ class DuplicateHomonymDetector:
     def analyze_csv_file(self, csv_file_path: str, laboratory_file_path: Optional[str] = None) -> Dict:
         """
         Analyse un fichier CSV pour détecter doublons et homonymes
+        MODIFIÉ: Ajout de vérifications d'arrêt
         
         Args:
             csv_file_path: Chemin vers le fichier CSV à analyser
@@ -136,6 +141,11 @@ class DuplicateHomonymDetector:
         print("="*60)
         print("ANALYSE DES DOUBLONS ET HOMONYMES")
         print("="*60)
+        
+        # Vérifier l'arrêt dès le début
+        if self.stop_requested:
+            print("Analyse arrêtée avant le début")
+            return self._create_empty_results()
         
         # Charger les données
         df = pd.read_csv(csv_file_path)
@@ -168,19 +178,31 @@ class DuplicateHomonymDetector:
         }
         
         processed_authors = 0
+        total_authors = len([group for _, group in author_groups if len(group) >= 2])
         
         for (nom, prenom), group in author_groups:
             if len(group) < 2:
                 continue  # Ignorer les auteurs avec une seule publication
             
+            # NOUVEAU: Vérifier l'arrêt à chaque itération
+            if self.stop_requested:
+                print(f"\nAnalyse interrompue après {processed_authors} auteurs traités")
+                break
+            
             processed_authors += 1
             results['summary']['authors_with_multiple_pubs'] += 1
             
-            print(f"Analyse de {nom} {prenom} ({len(group)} publications)...")
+            print(f"Analyse de {nom} {prenom} ({len(group)} publications) - {processed_authors}/{total_authors}...", end='\r')
+            sys.stdout.flush()  # Force l'affichage immédiat
             
             # Enrichir les données avec les informations HAL
             enriched_data = []
             for idx, row in group.iterrows():
+                # NOUVEAU: Vérifier l'arrêt même pendant l'enrichissement
+                if self.stop_requested:
+                    print(f"\nAnalyse interrompue pendant l'enrichissement de {nom} {prenom}")
+                    break
+                    
                 hal_data = self.query_hal_by_docid(row['Docid'])
                 lab_info = self.extract_laboratory_info(row, laboratory_df)
                 
@@ -191,6 +213,10 @@ class DuplicateHomonymDetector:
                     'laboratory_info': lab_info,
                     'main_title': self.extract_main_title(row['Titre'])
                 })
+            
+            # Si arrêt demandé, sortir de la boucle principale
+            if self.stop_requested:
+                break
             
             # Analyser ce groupe d'auteur
             group_analysis = self.analyze_author_group(nom, prenom, enriched_data)
@@ -207,9 +233,29 @@ class DuplicateHomonymDetector:
         results['summary']['homonym_publications'] = len(results['homonym_cases'])
         results['summary']['multi_thesis_publications'] = len(results['multi_thesis_cases'])
         
-        print(f"\nAnalyse terminée pour {processed_authors} auteurs avec publications multiples")
+        if self.stop_requested:
+            print(f"\nAnalyse INTERROMPUE après traitement de {processed_authors} auteurs")
+        else:
+            print(f"\nAnalyse terminée pour {processed_authors} auteurs avec publications multiples")
         
         return results
+    
+    def _create_empty_results(self):
+        """Crée une structure de résultats vide pour les analyses interrompues"""
+        return {
+            'duplicate_cases': [],
+            'homonym_cases': [],
+            'multi_thesis_cases': [],
+            'no_authid_cases': [],
+            'collaborator_cases': [],
+            'summary': {
+                'total_publications': 0,
+                'authors_with_multiple_pubs': 0,
+                'duplicate_publications': 0,
+                'homonym_publications': 0,
+                'multi_thesis_publications': 0
+            }
+        }
     
     def analyze_author_group(self, nom: str, prenom: str, enriched_data: List[Dict]) -> Dict:
         """

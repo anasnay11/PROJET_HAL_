@@ -15,6 +15,7 @@ from detection_doublons_homonymes import DuplicateHomonymDetector
 def detection_doublons_homonymes():
     """
     Fonction principale pour la détection
+    MODIFIÉE: Amélioration de la gestion des threads
     """
     # Créer la fenêtre principale
     detection_window = Toplevel()
@@ -91,6 +92,10 @@ Cette méthode améliore considérablement la précision de détection :
         analysis_window.transient(detection_window)
         analysis_window.grab_set()
         
+        # Variables pour la gestion du thread
+        analysis_thread = None
+        detector_instance = None
+        
         # Titre
         tk.Label(analysis_window, text="Analyse des Doublons & Homonymes", 
                 font=("Helvetica", 16, "bold")).pack(pady=10)
@@ -140,20 +145,58 @@ Cette méthode améliore considérablement la précision de détection :
         action_frame = tk.Frame(analysis_window)
         action_frame.pack(side="bottom", pady=10)
         
+        def fermer_analyse():
+            """Ferme la fenêtre et arrête l'analyse - AMÉLIORÉ"""
+            nonlocal analysis_thread, detector_instance
+            
+            print("Fermeture de l'analyse demandée par l'utilisateur...")
+            
+            # Arrêter le détecteur si il existe
+            if detector_instance:
+                detector_instance.set_stop_flag(True)
+                print("Signal d'arrêt envoyé au détecteur")
+            
+            # Arrêter la barre de progression
+            try:
+                progress_bar.stop()
+            except:
+                pass
+            
+            # Attendre que le thread se termine (avec timeout)
+            if analysis_thread and analysis_thread.is_alive():
+                print("Attente de l'arrêt du thread...")
+                analysis_thread.join(timeout=2.0)  # Attendre maximum 2 secondes
+            
+            # Fermer la fenêtre
+            analysis_window.destroy()
+        
+        # Gestion de la fermeture par la croix - AMÉLIORÉE
+        analysis_window.protocol("WM_DELETE_WINDOW", fermer_analyse)
+        
         def lancer_analyse():
-            """Lance l'analyse dans un thread séparé"""
-            def analysis_thread():
-                nonlocal analysis_results
+            """Lance l'analyse dans un thread séparé - AMÉLIORÉ"""
+            nonlocal analysis_thread, detector_instance
+            
+            def analysis_thread_func():
+                nonlocal analysis_results, detector_instance
                 
                 try:
+                    
                     # Démarrer la barre de progression
                     progress_bar.start()
                     progress_var.set("Analyse en cours... Interrogation de l'API HAL")
                     
                     # Créer le détecteur et lancer l'analyse
-                    detector = DuplicateHomonymDetector()
-                    analysis_results = detector.analyze_csv_file(analysis_file, laboratory_file)
+                    detector_instance = DuplicateHomonymDetector()
                     
+                    analysis_results = detector_instance.analyze_csv_file(analysis_file, laboratory_file)
+                    
+                    # Vérifier si l'analyse a été interrompue
+                    if detector_instance.stop_requested:
+                        print("Analyse interrompue - affichage des résultats partiels")
+                        progress_var.set("Analyse interrompue par l'utilisateur")
+                        return
+                                        
                     # Afficher les résultats dans les onglets
                     display_summary(summary_frame, analysis_results)
                     display_duplicates(duplicates_frame, analysis_results)
@@ -161,29 +204,36 @@ Cette méthode améliore considérablement la précision de détection :
                     display_multithesis(multithesis_frame, analysis_results)
                     display_collaborators(collaborators_frame, analysis_results)
                     display_issues(issues_frame, analysis_results)
-                    
+                
                     # Activer les boutons d'action
                     btn_traiter.config(state="normal")
                     btn_exporter.config(state="normal")
                     btn_recommandations.config(state="normal")
-                    
+                
                     progress_var.set("Analyse terminée avec succès!")
-                    
+                
                 except Exception as e:
-                    # Afficher l'erreur
-                    error_text = tk.Text(summary_frame, font=("Courier", 10), wrap="word")
-                    error_text.pack(fill="both", expand=True, padx=5, pady=5)
-                    error_text.insert(tk.END, f"ERREUR lors de l'analyse:\n{str(e)}")
-                    error_text.config(state="disabled")
+                    print(f"DEBUG: Erreur dans le thread: {str(e)}")
+                    if not (detector_instance and detector_instance.stop_requested):
+                        # Afficher l'erreur seulement si ce n'est pas un arrêt volontaire
+                        error_text = tk.Text(summary_frame, font=("Courier", 10), wrap="word")
+                        error_text.pack(fill="both", expand=True, padx=5, pady=5)
+                        error_text.insert(tk.END, f"ERREUR lors de l'analyse:\n{str(e)}")
+                        error_text.config(state="disabled")
                     
-                    progress_var.set("Erreur lors de l'analyse")
-                    
+                        progress_var.set("Erreur lors de l'analyse")
+                
                 finally:
-                    progress_bar.stop()
+                    try:
+                        if not (detector_instance and detector_instance.stop_requested):
+                            progress_bar.stop()
+                    except:
+                        pass
+                    print("Thread d'analyse terminé")
             
             # Lancer dans un thread séparé
-            thread = threading.Thread(target=analysis_thread)
-            thread.start()
+            analysis_thread = threading.Thread(target=analysis_thread_func, daemon=True)
+            analysis_thread.start()
         
         def traiter_donnees():
             """Interface de traitement des données problématiques"""
@@ -231,7 +281,7 @@ Cette méthode améliore considérablement la précision de détection :
         btn_recommandations.pack(side="left", padx=5)
         
         btn_fermer = tk.Button(action_frame, text="Fermer", 
-                              command=analysis_window.destroy, font=("Helvetica", 11),
+                              command=fermer_analyse, font=("Helvetica", 11),
                               width=10)
         btn_fermer.pack(side="right", padx=5)
         
@@ -308,7 +358,7 @@ Analyse terminée avec succès!
 def display_duplicates(frame, results):
     """Affiche les doublons détectés"""
     if not results['duplicate_cases']:
-        tk.Label(frame, text="Aucun doublon détecté ✓", 
+        tk.Label(frame, text="Aucun doublon détecté", 
                 font=("Helvetica", 14, "bold"), fg="green").pack(pady=50)
         return
     
@@ -354,7 +404,7 @@ def display_duplicates(frame, results):
 def display_homonyms(frame, results):
     """Affiche les homonymes détectés"""
     if not results['homonym_cases']:
-        tk.Label(frame, text="Aucun homonyme détecté ✓", 
+        tk.Label(frame, text="Aucun homonyme détecté", 
                 font=("Helvetica", 14, "bold"), fg="green").pack(pady=50)
         return
     
@@ -395,7 +445,7 @@ def display_homonyms(frame, results):
 def display_multithesis(frame, results):
     """Affiche les cas de multi-thèses"""
     if not results['multi_thesis_cases']:
-        tk.Label(frame, text="Aucun cas de multi-thèse détecté ✓", 
+        tk.Label(frame, text="Aucun cas de multi-thèse détecté", 
                 font=("Helvetica", 14, "bold"), fg="green").pack(pady=50)
         return
     
@@ -495,7 +545,7 @@ Actions recommandées :
 def display_issues(frame, results):
     """Affiche les problèmes techniques détectés"""
     if not results['no_authid_cases']:
-        tk.Label(frame, text="Aucun problème technique détecté ✓", 
+        tk.Label(frame, text="Aucun problème technique détecté", 
                 font=("Helvetica", 14, "bold"), fg="green").pack(pady=50)
         return
     
@@ -653,10 +703,13 @@ ACTIONS DISPONIBLES :
             # Sauvegarder le fichier traité
             base_name = os.path.splitext(os.path.basename(analysis_file))[0]
             processed_filename = f"{base_name}_nettoye.csv"
-            processed_path = os.path.join('extraction', processed_filename)
-            
+            extraction_dir = 'extraction'
+            if not os.path.exists(extraction_dir):
+                os.makedirs(extraction_dir)
+                
+            processed_path = os.path.join(extraction_dir, processed_filename)
             processed_df.to_csv(processed_path, index=False)
-            
+
             # Message de succès
             success_msg = f"TRAITEMENT TERMINÉ AVEC SUCCÈS\n\n"
             success_msg += f"Publications originales: {len(original_df)}\n"
@@ -946,4 +999,3 @@ def show_recommendations(results):
 # Fonction lancer la détection dans app.py
 def remplacer_ancienne_detection():
     return detection_doublons_homonymes
-
