@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+# main.py
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 import argparse
@@ -122,6 +124,7 @@ def get_user_selected_csv():
 
 def create_extraction_folder():
     """Create extraction folder for output files"""
+    
     current_directory = os.path.dirname(os.path.abspath(__file__))
     extraction_directory = os.path.join(current_directory, "extraction")
 
@@ -131,8 +134,9 @@ def create_extraction_folder():
     return extraction_directory
 
 def fetch_data(row):
-    """UPDATED: Wrapper function for parallel data extraction with new type handling"""
-    # CORRECTION: Pass type as list for proper handling in get_hal_data
+    """Wrapper function for parallel data extraction with type handling"""
+    
+    # Pass type as list for proper handling in get_hal_data
     type_filter = [args.type] if args.type else None
     domain_filter = [args.domain] if args.domain else None
     
@@ -146,7 +150,7 @@ def fetch_data(row):
 
 def display_extraction_summary():
     """
-    ENHANCED: Displays a summary of the extraction with detailed thesis information
+    Displays a summary of the extraction with detailed thesis information
     
     Shows filters, sensitivity settings, and output options in a formatted way
     """
@@ -193,13 +197,13 @@ def display_extraction_summary():
     print(f"• Matching: {sensitivity_text}")
     print(f"• Outputs: {output_text}")
     
-    # ENHANCED: Detailed thesis information
+    # Detailed thesis information
     if args.type:
         type_lower = args.type.lower()
         if any(keyword in type_lower for keyword in ['thèse', 'habilitation', 'thesis', 'hdr']):
             print(f"• Extended search: Double query (prenom nom + nom prenom) for better results")
         
-        # NEW: Specific information for new thesis types
+        # Specific information for thesis types
         if 'doctorant' in type_lower:
             print(f"• Thesis filter: PhD theses only (THESE documents)")
         elif 'hdr' in type_lower and 'thèse' in type_lower:
@@ -233,13 +237,13 @@ def list_extraction_csv_files():
 
 def select_extraction_csv():
     """
-    Sélection interactive d'un fichier CSV depuis le dossier extraction
-    
+    Interactive selection of a CSV file from the extraction directory.
+
     Returns:
-        str: Chemin complet vers le fichier CSV sélectionné
-        
+    str: Full path to the selected CSV file
+    
     Raises:
-        SystemExit: Si choix invalide ou entrée incorrecte
+    SystemExit: If invalid choice or incorrect input
     """
     try:
         extraction_directory, csv_files = list_extraction_csv_files()
@@ -276,7 +280,7 @@ def select_extraction_csv():
 
 def analyze_csv_cli():
     """
-    Interface en ligne de commande pour l'analyse d'un fichier CSV avec la nouvelle méthode
+    Command line interface for CSV file analysis 
     """
     print("\n" + "="*60)
     print("ANALYSE DES DOUBLONS & HOMONYMES")
@@ -284,10 +288,10 @@ def analyze_csv_cli():
     print("Méthode basée sur authIdPerson_i de l'API HAL")
     print("="*60)
     
-    # Sélectionner le fichier à analyser
+    # Select file to analyze
     analysis_file = select_extraction_csv()
     
-    # Demander le fichier de laboratoire (optionnel)
+    # Ask for laboratory file (optional)
     print(f"\nFichier laboratoire (optionnel):")
     print("Un fichier avec colonnes 'nom', 'prenom', 'unite_de_recherche'")
     print("améliore la détection des homonymes.")
@@ -316,17 +320,17 @@ def analyze_csv_cli():
     if laboratory_file:
         print(f"Fichier laboratoire: {laboratory_file}")
     
-    print("\nAnalyse en cours... (patience requise - interrogation API HAL)")
+    print("\nAnalyse en cours... (interrogation API HAL)")
     
     try:
-        # Créer le détecteur et lancer l'analyse
+        # Create detector and launch analysis
         detector = DuplicateHomonymDetector()
         results = detector.analyze_csv_file(analysis_file, laboratory_file)
         
-        # Afficher les résultats détaillés
+        # Display detailed results
         detector.display_results(results)
         
-        # Sauvegarder les résultats
+        # Save results
         base_name = os.path.splitext(os.path.basename(analysis_file))[0]
         results_file = f'detection_results_{base_name}.json'
         
@@ -335,7 +339,7 @@ def analyze_csv_cli():
         
         print(f"\nRésultats sauvegardés dans: {results_file}")
         
-        # Proposer des actions
+        # Propose actions
         propose_actions(results, analysis_file)
         
     except Exception as e:
@@ -343,11 +347,11 @@ def analyze_csv_cli():
 
 def propose_actions(results, analysis_file):
     """
-    Propose des actions à l'utilisateur après l'analyse
+    Proposes actions to the user after analysis
     
     Args:
-        results: Dictionnaire des résultats d'analyse
-        analysis_file: Chemin vers le fichier analysé
+        results: Dictionary containing analysis results
+        analysis_file: Path to the analyzed file
     """
     print(f"\n" + "="*60)
     print("ACTIONS DISPONIBLES")
@@ -370,7 +374,7 @@ def propose_actions(results, analysis_file):
                 break
             elif choice == 3:
                 display_detailed_results(results)
-                # Après affichage, reproposer les actions
+                # After display, propose actions again
                 continue
             elif choice == 4:
                 print("Analyse terminée.")
@@ -383,11 +387,11 @@ def propose_actions(results, analysis_file):
 
 def treat_data_cli(results, analysis_file):
     """
-    Traite automatiquement les données problématiques avec la nouvelle méthode
+    Automatically processes problematic data with the new method
     
     Args:
-        results: Dictionnaire des résultats d'analyse
-        analysis_file: Chemin vers le fichier analysé
+        results: Dictionary containing analysis results
+        analysis_file: Path to the analyzed file
     """
     print(f"\n" + "="*50)
     print("TRAITEMENT AUTOMATIQUE DES DONNÉES")
@@ -401,7 +405,7 @@ def treat_data_cli(results, analysis_file):
     print(f"   • Collaborations: {len(results['collaborator_cases'])} cas")
     print(f"   • Multi-thèses: {summary['multi_thesis_publications']} cas")
     
-    # Options de traitement
+    # Treatment options
     print(f"\nOptions de traitement:")
     print(f"1. Supprimer les doublons uniquement")
     print(f"2. Supprimer doublons + collaborations")
@@ -411,21 +415,21 @@ def treat_data_cli(results, analysis_file):
     try:
         choice = int(input(f"\nChoisissez le type de traitement (1-4): "))
         
-        # Charger les données originales
+        # Load original data
         original_df = pd.read_csv(analysis_file)
         processed_df = original_df.copy()
         
         actions_performed = []
         indices_to_remove = set()
         
-        if choice == 1 or choice == 2 or choice == 3:  # Supprimer doublons
+        if choice == 1 or choice == 2 or choice == 3:  # Remove duplicates
             if results['duplicate_cases']:
                 for case in results['duplicate_cases']:
                     indices_to_remove.add(case['publication2']['index'])
                 
                 actions_performed.append(f"Supprimé {len(results['duplicate_cases'])} doublons")
         
-        if choice == 2 or choice == 3:  # Supprimer collaborations
+        if choice == 2 or choice == 3:  # Remove collaborations
             if results['collaborator_cases']:
                 for case in results['collaborator_cases']:
                     collab_data = case['collaboration']['row_data']
@@ -434,7 +438,7 @@ def treat_data_cli(results, analysis_file):
                 
                 actions_performed.append(f"Supprimé {len(results['collaborator_cases'])} collaborations")
         
-        if choice == 4:  # Traitement personnalisé
+        if choice == 4:  # Custom treatment
             print(f"\nTraitement personnalisé:")
             
             if results['duplicate_cases']:
@@ -453,18 +457,18 @@ def treat_data_cli(results, analysis_file):
                             indices_to_remove.add(collab_data.name)
                     actions_performed.append(f"Supprimé {len(results['collaborator_cases'])} collaborations")
         
-        # Supprimer les indices marqués
+        # Remove marked indices
         if indices_to_remove:
             processed_df = processed_df.drop(indices_to_remove).reset_index(drop=True)
         
-        # Sauvegarder le fichier traité
+        # Save processed file
         base_name = os.path.splitext(os.path.basename(analysis_file))[0]
         processed_filename = f"{base_name}_nettoye.csv"
         processed_path = os.path.join('extraction', processed_filename)
         
         processed_df.to_csv(processed_path, index=False)
         
-        # Afficher le résumé
+        # Display summary
         print(f"\nTRAITEMENT TERMINÉ")
         print(f"Publications originales: {len(original_df)}")
         print(f"Publications traitées: {len(processed_df)}")
@@ -483,11 +487,11 @@ def treat_data_cli(results, analysis_file):
 
 def export_results_cli(results, analysis_file):
     """
-    Exporte les résultats détaillés
+    Exports detailed results
     
     Args:
-        results: Dictionnaire des résultats d'analyse
-        analysis_file: Chemin vers le fichier analysé
+        results: Dictionary containing analysis results
+        analysis_file: Path to the analyzed file
     """
     print(f"\n" + "="*50)
     print("EXPORTATION DES RÉSULTATS")
@@ -499,7 +503,7 @@ def export_results_cli(results, analysis_file):
     try:
         exported_files = []
         
-        # Exporter les doublons
+        # Export duplicates
         if results['duplicate_cases']:
             dup_df = pd.DataFrame([
                 {
@@ -520,7 +524,7 @@ def export_results_cli(results, analysis_file):
             dup_df.to_csv(dup_path, index=False)
             exported_files.append(dup_path)
         
-        # Exporter les homonymes
+        # Export homonyms
         if results['homonym_cases']:
             hom_df = pd.DataFrame([
                 {
@@ -541,7 +545,7 @@ def export_results_cli(results, analysis_file):
             hom_df.to_csv(hom_path, index=False)
             exported_files.append(hom_path)
         
-        # Exporter les collaborations
+        # Export collaborations
         if results['collaborator_cases']:
             collab_df = pd.DataFrame([
                 {
@@ -558,7 +562,7 @@ def export_results_cli(results, analysis_file):
             collab_df.to_csv(collab_path, index=False)
             exported_files.append(collab_path)
         
-        # Exporter le résumé
+        # Export summary
         summary_path = os.path.join(export_dir, f'{base_name}_resume.txt')
         with open(summary_path, 'w', encoding='utf-8') as f:
             summary = results['summary']
@@ -595,16 +599,16 @@ def export_results_cli(results, analysis_file):
 
 def display_detailed_results(results):
     """
-    Affiche des résultats plus détaillés
+    Displays more detailed results
     
     Args:
-        results: Dictionnaire des résultats d'analyse
+        results: Dictionary containing analysis results
     """
     print(f"\n" + "="*60)
     print("RÉSULTATS DÉTAILLÉS")
     print("="*60)
     
-    # Afficher tous les doublons
+    # Display all duplicates
     if results['duplicate_cases']:
         print(f"\nTOUS LES DOUBLONS ({len(results['duplicate_cases'])}):")
         print("-" * 50)
@@ -614,7 +618,7 @@ def display_detailed_results(results):
             print(f"    Titre 1 ({case['publication1']['year']}): {case['publication1']['title']}")
             print(f"    Titre 2 ({case['publication2']['year']}): {case['publication2']['title']}")
     
-    # Afficher tous les homonymes
+    # Display all homonyms
     if results['homonym_cases']:
         print(f"\nTOUS LES HOMONYMES ({len(results['homonym_cases'])}):")
         print("-" * 50)
@@ -625,7 +629,12 @@ def display_detailed_results(results):
             print(f"    Titre 2 ({case['publication2']['year']}): {case['publication2']['title']}")
 
 def add_detection_arguments(parser):
-    """Ajoute les arguments pour la détection de doublons et homonymes"""
+    """
+    Adds arguments for duplicate and homonym detection
+    
+    Args:
+        parser: ArgumentParser instance to add arguments to
+    """
     
     parser.add_argument(
         "--analyse",
@@ -738,13 +747,13 @@ def main():
         action="store_true"
     )
 
-    # Ajouter les arguments pour la détection
+    # Add arguments for detection
     add_detection_arguments(parser)
 
     global args
     args = parser.parse_args()
 
-    # Gérer l'option d'analyse de détection
+    # Handle detection analysis option
     if args.analyse:
         print("Mode analyse des doublons et homonymes activé")
         analyze_csv_cli()
@@ -769,9 +778,9 @@ def main():
 
     if args.list_types:
         types = list_types()
-        print("ENHANCED: List of available document types for filtering:\n")
+        print("List of available document types for filtering:\n")
         
-        # NEW: Group thesis types for better display
+        # Group thesis types for better display
         thesis_types = []
         other_types = []
         
@@ -839,7 +848,7 @@ def main():
     
     print(f"Extraction completed. Results saved to: {output_path}")
     
-    # ENHANCED: Detailed statistics display
+    # Detailed statistics display
     if not all_results.empty:
         print(f"\nExtraction completed: {len(all_results)} publications found")
         
@@ -850,7 +859,7 @@ def main():
             for doc_type, count in type_counts.items():
                 print(f"  {doc_type}: {count} publications")
             
-            # NEW: Special message for thesis extractions
+            # Special message for thesis extractions
             if args.type and any(keyword in args.type.lower() for keyword in ['thèse', 'habilitation']):
                 total_theses = sum(count for doc_type, count in type_counts.items() 
                                  if 'thèse' in doc_type.lower() or 'habilitation' in doc_type.lower())

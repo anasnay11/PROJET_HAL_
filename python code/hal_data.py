@@ -1,6 +1,6 @@
-#hal_data.py
-
 # -*- coding: utf-8 -*-
+
+# hal_data.py
 
 import requests
 import pandas as pd
@@ -319,7 +319,7 @@ def execute_hal_query(query_url):
 
 def get_hal_data(nom, prenom, period=None, domain_filter=None, type_filter=None, threshold=DEFAULT_THRESHOLD):
     """
-    ENHANCED: Main function with granular thesis/HDR filtering
+    Main function with granular thesis/HDR filtering
     
     Args:
         nom (str): Nom de famille
@@ -389,7 +389,7 @@ def get_hal_data(nom, prenom, period=None, domain_filter=None, type_filter=None,
     if not all_publications:
         return pd.DataFrame()
 
-    # STEP 4: ENHANCED POST-FILTERING
+    # STEP 4: POST-FILTERING
     
     # Get the precise HAL types to accept
     accepted_hal_types = get_hal_filter_for_post_processing(type_filter)

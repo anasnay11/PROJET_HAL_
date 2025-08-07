@@ -371,7 +371,7 @@ def generate_html_report_for_app(nom_fichier_csv, open_browser=True):
         </div>
         
         <div class="status-bar">
-            <span class="status-item status-success">✅ {len(existing_images)} graphiques disponibles</span>"""
+            <span class="status-item status-success">{len(existing_images)} graphiques disponibles</span>"""
     
     if missing_images:
         html_content += f'<span class="status-item status-warning">⚠️ {len(missing_images)} graphiques manquants</span>'
@@ -451,7 +451,7 @@ def generate_html_report_for_app(nom_fichier_csv, open_browser=True):
         try:
             webbrowser.open(f"file://{os.path.abspath(output_path)}")
         except Exception as e:
-            print(f"⚠️  Impossible d'ouvrir le navigateur : {e}")
+            print(f"Impossible d'ouvrir le navigateur : {e}")
     
     return output_path
 

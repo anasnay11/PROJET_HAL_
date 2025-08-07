@@ -1,9 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Mon Dec  2 16:44:16 2024
-
-Utility functions for the HAL data extraction and analysis tool
-"""
 
 # utils.py
 

@@ -49,7 +49,7 @@ def generate_html_report(nom_fichier_csv):
             missing_images.append(img)
     
     if missing_images:
-        print(f"⚠️  Attention : Images manquantes :")
+        print("Attention : Images manquantes :")
         for img in missing_images:
             print(f"   - {img}")
         print("Les graphiques manquants ne seront pas inclus dans le rapport.")
@@ -318,8 +318,8 @@ def generate_html_report(nom_fichier_csv):
     try:
         webbrowser.open(f"file://{os.path.abspath(output_path)}")
     except Exception as e:
-        print(f"⚠️  Impossible d'ouvrir automatiquement le navigateur : {e}")
-        print(f"📂 Ouvrez manuellement le fichier : {output_path}")
+        print(f"Impossible d'ouvrir automatiquement le navigateur : {e}")
+        print(f"Ouvrez manuellement le fichier : {output_path}")
     
     return output_path
 
@@ -359,7 +359,7 @@ def generate_latex_report(nom_fichier_csv):
             missing_images.append(img)
     
     if missing_images:
-        print(f"  Attention : Images manquantes pour le rapport LaTeX :")
+        print("Attention : Images manquantes pour le rapport LaTeX :")
         for img in missing_images:
             print(f"   - {img}")
 

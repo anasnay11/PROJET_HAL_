@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
-# app.py 
+# app.py
+
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, Toplevel, Listbox, MULTIPLE, ttk
@@ -189,7 +190,7 @@ def open_settings():
                            f"Distance : {DEFAULT_THRESHOLD}")
         settings_window.destroy()
     
-    # Buttons with better layout
+    # Buttons
     btn_frame = tk.Frame(button_frame)
     btn_frame.pack(pady=10)
     
@@ -500,7 +501,7 @@ def init_extraction_widgets():
     else:
         progress_bar.pack(pady=5)
 
-    # Add stop button if not existing
+    # Add stop button
     if btn_stop_extraction is None:
         btn_stop_extraction = tk.Button(
             frame_extraction, 
@@ -628,18 +629,28 @@ def stop_extraction_task():
         )
 
 def detection_doublons_homonymes():
+    """
+    Wrapper function that calls the duplicate and homonym detection process.
+    
+    Purpose: Delegates the detection logic to the integration module
+    """
     from integration import detection_doublons_homonymes as nouvelle_detection
     nouvelle_detection()
     
 def create_detection_tab():
-    """Crée l'onglet de détection des doublons et homonymes - VERSION MISE À JOUR"""
+    """
+    Creates the duplicate and homonym detection tab in the GUI.
     
-    # Créer le frame pour l'onglet détection
+    Purpose: Sets up the complete UI for the detection functionality including
+             buttons, labels, and information panels
+    """
+    
+    # Create the frame for the detection tab
     global frame_detection
     frame_detection = ttk.Frame(notebook)
     frame_detection.pack(fill="both", expand=True)
     
-    # Titre
+    # Main title
     label_detection = tk.Label(
         frame_detection,
         text="Détection Doublons & Homonymes\n",
@@ -647,10 +658,10 @@ def create_detection_tab():
     )
     label_detection.pack(pady=20)
     
-    # Séparateur
+    # Visual separator
     ttk.Separator(frame_detection, orient="horizontal").pack(fill="x", padx=20, pady=10)
     
-    # Bouton principal - PREMIER ET PLUS VISIBLE
+    # Main action button
     btn_detection = tk.Button(
         frame_detection, 
         text="Lancer la Détection", 
@@ -663,26 +674,24 @@ def create_detection_tab():
     )
     btn_detection.pack(pady=20)
     
-    # Informations sur la méthode
+    # Method information panel
     info_text = """
 MÉTHODE Basée sur :
-
 • Groupement par (nom, prénom) des publications multiples
 • Requête API HAL
 • Distinction précise basée sur les identifiants HAL uniques
 • Détection des collaborations vs thèses principales
     """
     
+    # Information display with styling
     info_label = tk.Label(frame_detection, text=info_text, 
                          font=("Helvetica", 10), justify="left",
                          relief="ridge", bd=1, bg="#e8f5e8")
     info_label.pack(pady=10, padx=20, fill="x")
-
     
-    # Informations techniques
+    # Technical instructions panel
     tech_text = """
 INSTRUCTIONS D'UTILISATION :
-
 1. Préparez votre fichier CSV d'extraction (format standard de l'application)
 2. Optionnel: fichier laboratoire pour améliorer précision homonymes
 3. Lancez l'analyse 
@@ -691,6 +700,7 @@ INSTRUCTIONS D'UTILISATION :
 6. Exportez résultats pour documentation et archivage
     """
     
+    # Technical instructions display
     tech_label = tk.Label(frame_detection, text=tech_text, 
                          font=("Helvetica", 9), justify="left",
                          fg="gray")

@@ -1,9 +1,7 @@
-# integration.py
 # -*- coding: utf-8 -*-
 
-"""
-Module d'intégration de la détection dans l'interface graphique
-"""
+# integration.py
+
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, Toplevel, ttk
@@ -14,21 +12,20 @@ from detection_doublons_homonymes import DuplicateHomonymDetector
 
 def detection_doublons_homonymes():
     """
-    Fonction principale pour la détection
-    MODIFIÉE: Amélioration de la gestion des threads
+    Main function for duplicate and homonym detection
     """
-    # Créer la fenêtre principale
+    # Create main window
     detection_window = Toplevel()
     detection_window.title("Détection Doublons & Homonymes")
     detection_window.geometry("800x700")
     detection_window.resizable(True, True)
     
-    # Titre
+    # Title
     title_label = tk.Label(detection_window, text="Détection Doublons & Homonymes", 
                           font=("Helvetica", 18, "bold"))
     title_label.pack(pady=15)
     
-    # Description de la méthode
+    # Method description
     description_text = """
 ALGORITHME AUTHIDPERSON_I
 
@@ -47,20 +44,20 @@ Cette méthode améliore considérablement la précision de détection :
                          font=("Helvetica", 10), justify="left", bg="#f0f0f0")
     info_label.pack(pady=10, padx=15)
     
-    # Séparateur
+    # Separator
     ttk.Separator(detection_window, orient="horizontal").pack(fill="x", padx=20, pady=10)
     
-    # Frame pour les boutons principaux
+    # Frame for main buttons
     main_buttons_frame = tk.Frame(detection_window)
     main_buttons_frame.pack(pady=20)
     
-    # Variables globales pour cette fenêtre
+    # Global variables for this window
     analysis_results = None
     
     def analyser_fichier():
-        """Lance l'analyse d'un fichier CSV"""
+        """Launches analysis of a CSV file"""
         
-        # Sélectionner le fichier principal à analyser
+        # Select main file to analyze
         analysis_file = filedialog.askopenfilename(
             title="Sélectionner un fichier CSV à analyser",
             filetypes=[("Fichiers CSV", "*.csv"), ("Tous les fichiers", "*.*")],
@@ -70,7 +67,7 @@ Cette méthode améliore considérablement la précision de détection :
         if not analysis_file:
             return
         
-        # Optionnel : sélectionner le fichier des laboratoires
+        # Optional: select laboratory file
         use_lab_file = messagebox.askyesno(
             "Fichier laboratoire",
             "Souhaitez-vous utiliser un fichier de laboratoires\n"
@@ -85,22 +82,22 @@ Cette méthode améliore considérablement la précision de détection :
                 filetypes=[("Fichiers CSV", "*.csv"), ("Tous les fichiers", "*.*")]
             )
         
-        # Créer la fenêtre d'analyse
+        # Create analysis window
         analysis_window = Toplevel(detection_window)
         analysis_window.title("Analyse en cours...")
         analysis_window.geometry("900x800")
         analysis_window.transient(detection_window)
         analysis_window.grab_set()
         
-        # Variables pour la gestion du thread
+        # Variables for thread management
         analysis_thread = None
         detector_instance = None
         
-        # Titre
+        # Title
         tk.Label(analysis_window, text="Analyse des Doublons & Homonymes", 
                 font=("Helvetica", 16, "bold")).pack(pady=10)
         
-        # Informations sur les fichiers
+        # File information
         file_info = f"Fichier analysé: {os.path.basename(analysis_file)}"
         if laboratory_file:
             file_info += f"\nFichier laboratoire: {os.path.basename(laboratory_file)}"
@@ -108,11 +105,11 @@ Cette méthode améliore considérablement la précision de détection :
         tk.Label(analysis_window, text=file_info, 
                 font=("Helvetica", 10, "italic")).pack(pady=5)
         
-        # Notebook pour organiser les résultats
+        # Notebook to organize results
         results_notebook = ttk.Notebook(analysis_window)
         results_notebook.pack(fill="both", expand=True, padx=10, pady=10)
         
-        # Onglets
+        # Tabs
         summary_frame = ttk.Frame(results_notebook)
         results_notebook.add(summary_frame, text="Résumé")
         
@@ -131,7 +128,7 @@ Cette méthode améliore considérablement la précision de détection :
         issues_frame = ttk.Frame(results_notebook)
         results_notebook.add(issues_frame, text="Problèmes")
         
-        # Barre de progression et status
+        # Progress bar and status
         progress_var = tk.StringVar()
         progress_var.set("Initialisation de l'analyse...")
         progress_label = tk.Label(analysis_window, textvariable=progress_var, 
@@ -141,40 +138,40 @@ Cette méthode améliore considérablement la précision de détection :
         progress_bar = ttk.Progressbar(analysis_window, mode='indeterminate')
         progress_bar.pack(pady=5, fill="x", padx=20)
         
-        # Boutons d'action
+        # Action buttons
         action_frame = tk.Frame(analysis_window)
         action_frame.pack(side="bottom", pady=10)
         
         def fermer_analyse():
-            """Ferme la fenêtre et arrête l'analyse - AMÉLIORÉ"""
+            """Closes window and stops analysis - improved version"""
             nonlocal analysis_thread, detector_instance
             
             print("Fermeture de l'analyse demandée par l'utilisateur...")
             
-            # Arrêter le détecteur si il existe
+            # Stop detector if it exists
             if detector_instance:
                 detector_instance.set_stop_flag(True)
                 print("Signal d'arrêt envoyé au détecteur")
             
-            # Arrêter la barre de progression
+            # Stop progress bar
             try:
                 progress_bar.stop()
             except:
                 pass
             
-            # Attendre que le thread se termine (avec timeout)
+            # Wait for thread to finish (with timeout)
             if analysis_thread and analysis_thread.is_alive():
                 print("Attente de l'arrêt du thread...")
-                analysis_thread.join(timeout=2.0)  # Attendre maximum 2 secondes
+                analysis_thread.join(timeout=2.0)  # Wait maximum 2 seconds
             
-            # Fermer la fenêtre
+            # Close window
             analysis_window.destroy()
         
-        # Gestion de la fermeture par la croix - AMÉLIORÉE
+        # Window close button handling - improved
         analysis_window.protocol("WM_DELETE_WINDOW", fermer_analyse)
         
         def lancer_analyse():
-            """Lance l'analyse dans un thread séparé - AMÉLIORÉ"""
+            """Launches analysis in separate thread - improved version"""
             nonlocal analysis_thread, detector_instance
             
             def analysis_thread_func():
@@ -182,22 +179,22 @@ Cette méthode améliore considérablement la précision de détection :
                 
                 try:
                     
-                    # Démarrer la barre de progression
+                    # Start progress bar
                     progress_bar.start()
                     progress_var.set("Analyse en cours... Interrogation de l'API HAL")
                     
-                    # Créer le détecteur et lancer l'analyse
+                    # Create detector and launch analysis
                     detector_instance = DuplicateHomonymDetector()
                     
                     analysis_results = detector_instance.analyze_csv_file(analysis_file, laboratory_file)
                     
-                    # Vérifier si l'analyse a été interrompue
+                    # Check if analysis was interrupted
                     if detector_instance.stop_requested:
                         print("Analyse interrompue - affichage des résultats partiels")
                         progress_var.set("Analyse interrompue par l'utilisateur")
                         return
                                         
-                    # Afficher les résultats dans les onglets
+                    # Display results in tabs
                     display_summary(summary_frame, analysis_results)
                     display_duplicates(duplicates_frame, analysis_results)
                     display_homonyms(homonyms_frame, analysis_results)
@@ -205,7 +202,7 @@ Cette méthode améliore considérablement la précision de détection :
                     display_collaborators(collaborators_frame, analysis_results)
                     display_issues(issues_frame, analysis_results)
                 
-                    # Activer les boutons d'action
+                    # Enable action buttons
                     btn_traiter.config(state="normal")
                     btn_exporter.config(state="normal")
                     btn_recommandations.config(state="normal")
@@ -215,7 +212,7 @@ Cette méthode améliore considérablement la précision de détection :
                 except Exception as e:
                     print(f"DEBUG: Erreur dans le thread: {str(e)}")
                     if not (detector_instance and detector_instance.stop_requested):
-                        # Afficher l'erreur seulement si ce n'est pas un arrêt volontaire
+                        # Show error only if not voluntary stop
                         error_text = tk.Text(summary_frame, font=("Courier", 10), wrap="word")
                         error_text.pack(fill="both", expand=True, padx=5, pady=5)
                         error_text.insert(tk.END, f"ERREUR lors de l'analyse:\n{str(e)}")
@@ -231,12 +228,12 @@ Cette méthode améliore considérablement la précision de détection :
                         pass
                     print("Thread d'analyse terminé")
             
-            # Lancer dans un thread séparé
+            # Launch in separate thread
             analysis_thread = threading.Thread(target=analysis_thread_func, daemon=True)
             analysis_thread.start()
         
         def traiter_donnees():
-            """Interface de traitement des données problématiques"""
+            """Interface for problematic data processing"""
             if not analysis_results:
                 messagebox.showerror("Erreur", "Aucune analyse disponible.")
                 return
@@ -244,7 +241,7 @@ Cette méthode améliore considérablement la précision de détection :
             traitement_window = create_treatment_interface(analysis_window, analysis_results, analysis_file)
         
         def exporter_resultats():
-            """Interface d'exportation des résultats"""
+            """Results export interface"""
             if not analysis_results:
                 messagebox.showerror("Erreur", "Aucune analyse disponible.")
                 return
@@ -252,14 +249,14 @@ Cette méthode améliore considérablement la précision de détection :
             export_results_interface(analysis_results, analysis_file)
         
         def afficher_recommandations():
-            """Affiche des recommandations basées sur l'analyse"""
+            """Displays recommendations based on analysis"""
             if not analysis_results:
                 messagebox.showerror("Erreur", "Aucune analyse disponible.")
                 return
             
             show_recommendations(analysis_results)
         
-        # Boutons d'action
+        # Action buttons
         btn_analyser = tk.Button(action_frame, text="Lancer l'analyse", 
                                 command=lancer_analyse, font=("Helvetica", 11, "bold"),
                                 bg="#4CAF50", fg="white", width=15)
@@ -285,16 +282,16 @@ Cette méthode améliore considérablement la précision de détection :
                               width=10)
         btn_fermer.pack(side="right", padx=5)
         
-        # Lancer automatiquement l'analyse
+        # Automatically launch analysis
         lancer_analyse()
     
-    # Bouton principal d'analyse
+    # Main analysis button
     btn_analyser = tk.Button(main_buttons_frame, text="Analyser un fichier CSV", 
                             command=analyser_fichier, font=("Helvetica", 14, "bold"),
                             bg="#4CAF50", fg="white", width=30, height=2)
     btn_analyser.pack(pady=10)
     
-    # Informations complémentaires
+    # Additional information
     complementary_info = """
 CONSEIL D'UTILISATION :
 
@@ -314,7 +311,7 @@ le temps d'analyse dépend du nombre de publications à traiter.
                           relief="flat", bg="#f8f8f8")
     info_label2.pack(pady=10, padx=20, fill="x")
     
-    # Bouton fermer
+    # Close button
     btn_fermer = tk.Button(detection_window, text="Fermer", 
                           command=detection_window.destroy, font=("Helvetica", 11),
                           width=15)
@@ -322,7 +319,13 @@ le temps d'analyse dépend du nombre de publications à traiter.
 
 
 def display_summary(frame, results):
-    """Affiche le résumé de l'analyse"""
+    """
+    Displays analysis summary
+    
+    Args:
+        frame: Tkinter frame to display in
+        results (dict): Analysis results
+    """
     summary_text = tk.Text(frame, font=("Courier", 10), wrap="word")
     summary_text.pack(fill="both", expand=True, padx=5, pady=5)
     
@@ -356,17 +359,23 @@ Analyse terminée avec succès!
 
 
 def display_duplicates(frame, results):
-    """Affiche les doublons détectés"""
+    """
+    Displays detected duplicates
+    
+    Args:
+        frame: Tkinter frame to display in
+        results (dict): Analysis results
+    """
     if not results['duplicate_cases']:
         tk.Label(frame, text="Aucun doublon détecté", 
                 font=("Helvetica", 14, "bold"), fg="green").pack(pady=50)
         return
     
-    # Créer un treeview pour afficher les doublons
+    # Create treeview to display duplicates
     columns = ('Auteur', 'Similarité', 'Titre 1', 'Titre 2', 'Années', 'Type')
     tree = ttk.Treeview(frame, columns=columns, show='headings', height=15)
     
-    # Configurer les colonnes
+    # Configure columns
     tree.heading('Auteur', text='Auteur')
     tree.heading('Similarité', text='Score')
     tree.heading('Titre 1', text='Titre 1')
@@ -381,11 +390,11 @@ def display_duplicates(frame, results):
     tree.column('Années', width=100)
     tree.column('Type', width=150)
     
-    # Ajouter une scrollbar
+    # Add scrollbar
     scrollbar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
     tree.configure(yscrollcommand=scrollbar.set)
     
-    # Insérer les données
+    # Insert data
     for case in results['duplicate_cases']:
         tree.insert('', 'end', values=(
             case['author'],
@@ -396,23 +405,29 @@ def display_duplicates(frame, results):
             case['type']
         ))
     
-    # Pack les widgets
+    # Pack widgets
     tree.pack(side="left", fill="both", expand=True, padx=5, pady=5)
     scrollbar.pack(side="right", fill="y")
 
 
 def display_homonyms(frame, results):
-    """Affiche les homonymes détectés"""
+    """
+    Displays detected homonyms
+    
+    Args:
+        frame: Tkinter frame to display in
+        results (dict): Analysis results
+    """
     if not results['homonym_cases']:
         tk.Label(frame, text="Aucun homonyme détecté", 
                 font=("Helvetica", 14, "bold"), fg="green").pack(pady=50)
         return
     
-    # Créer un treeview pour afficher les homonymes
+    # Create treeview to display homonyms
     columns = ('Auteur', 'Titre 1', 'Titre 2', 'Années', 'Domaines', 'Laboratoires')
     tree = ttk.Treeview(frame, columns=columns, show='headings', height=15)
     
-    # Configurer les colonnes
+    # Configure columns
     for col in columns:
         tree.heading(col, text=col)
     
@@ -427,7 +442,7 @@ def display_homonyms(frame, results):
     scrollbar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
     tree.configure(yscrollcommand=scrollbar.set)
     
-    # Insérer les données
+    # Insert data
     for case in results['homonym_cases']:
         tree.insert('', 'end', values=(
             case['author'],
@@ -443,13 +458,19 @@ def display_homonyms(frame, results):
 
 
 def display_multithesis(frame, results):
-    """Affiche les cas de multi-thèses"""
+    """
+    Displays multi-thesis cases
+    
+    Args:
+        frame: Tkinter frame to display in
+        results (dict): Analysis results
+    """
     if not results['multi_thesis_cases']:
         tk.Label(frame, text="Aucun cas de multi-thèse détecté", 
                 font=("Helvetica", 14, "bold"), fg="green").pack(pady=50)
         return
     
-    # Information explicative
+    # Explanatory information
     info_text = """
 CAS DE MULTI-THÈSES DÉTECTÉS
 
@@ -467,7 +488,7 @@ distinctes du même auteur ou d'autres problèmes de données.
                          justify="left", bg="#fff3cd", relief="ridge", bd=1)
     info_label.pack(fill="x", padx=10, pady=5)
     
-    # Treeview pour les multi-thèses
+    # Treeview for multi-thesis
     columns = ('Auteur', 'Titre 1', 'Titre 2', 'Écart (ans)', 'Similarité', 'Domaines')
     tree = ttk.Treeview(frame, columns=columns, show='headings', height=10)
     
@@ -499,13 +520,19 @@ distinctes du même auteur ou d'autres problèmes de données.
 
 
 def display_collaborators(frame, results):
-    """Affiche les cas de collaboration détectés"""
+    """
+    Displays detected collaboration cases
+    
+    Args:
+        frame: Tkinter frame to display in
+        results (dict): Analysis results
+    """
     if not results['collaborator_cases']:
         tk.Label(frame, text="Aucune collaboration détectée", 
                 font=("Helvetica", 14), fg="blue").pack(pady=50)
         return
     
-    # Information explicative
+    # Explanatory information
     info_text = """
 COLLABORATIONS DÉTECTÉES
 
@@ -522,7 +549,7 @@ Actions recommandées :
                          justify="left", bg="#d1ecf1", relief="ridge", bd=1)
     info_label.pack(fill="x", padx=10, pady=5)
     
-    # Affichage simple des collaborations
+    # Simple display of collaborations
     for i, case in enumerate(results['collaborator_cases'], 1):
         case_frame = tk.Frame(frame, relief="ridge", bd=1, bg="#f8f9fa")
         case_frame.pack(fill="x", padx=10, pady=5)
@@ -543,13 +570,19 @@ Actions recommandées :
 
 
 def display_issues(frame, results):
-    """Affiche les problèmes techniques détectés"""
+    """
+    Displays detected technical issues
+    
+    Args:
+        frame: Tkinter frame to display in
+        results (dict): Analysis results
+    """
     if not results['no_authid_cases']:
         tk.Label(frame, text="Aucun problème technique détecté", 
                 font=("Helvetica", 14, "bold"), fg="green").pack(pady=50)
         return
     
-    # Information explicative
+    # Explanatory information
     info_text = """
 PROBLÈMES TECHNIQUES
 
@@ -567,7 +600,7 @@ Examinez ces cas manuellement pour décider de la marche à suivre.
                          justify="left", bg="#f8d7da", relief="ridge", bd=1)
     info_label.pack(fill="x", padx=10, pady=5)
     
-    # Affichage des problèmes
+    # Display issues
     text_widget = tk.Text(frame, font=("Courier", 9), wrap="word", height=20)
     scrollbar = ttk.Scrollbar(frame, orient="vertical", command=text_widget.yview)
     text_widget.configure(yscrollcommand=scrollbar.set)
@@ -585,18 +618,28 @@ Examinez ces cas manuellement pour décider de la marche à suivre.
 
 
 def create_treatment_interface(parent_window, results, analysis_file):
-    """Crée l'interface de traitement des données"""
+    """
+    Creates data treatment interface
+    
+    Args:
+        parent_window: Parent window
+        results (dict): Analysis results
+        analysis_file (str): Path to analyzed file
+        
+    Returns:
+        Toplevel: Treatment window
+    """
     treatment_window = Toplevel(parent_window)
     treatment_window.title("Traitement Automatique des Données")
     treatment_window.geometry("700x600")
     treatment_window.transient(parent_window)
     treatment_window.grab_set()
     
-    # Titre
+    # Title
     tk.Label(treatment_window, text="Traitement Automatique des Données", 
             font=("Helvetica", 16, "bold")).pack(pady=10)
     
-    # Statistiques
+    # Statistics
     stats_frame = tk.Frame(treatment_window, relief="ridge", bd=2, bg="#f8f8f8")
     stats_frame.pack(fill="x", padx=20, pady=10)
     
@@ -615,11 +658,11 @@ ACTIONS DISPONIBLES :
     tk.Label(stats_frame, text=stats_text, font=("Helvetica", 10), 
             justify="left", bg="#f8f8f8").pack(pady=10, padx=10)
     
-    # Options de traitement
+    # Treatment options
     options_frame = tk.Frame(treatment_window)
     options_frame.pack(fill="x", padx=20, pady=10)
     
-    # Variables pour les options
+    # Variables for options
     remove_duplicates = tk.BooleanVar(value=True)
     flag_homonyms = tk.BooleanVar(value=True)
     remove_collaborations = tk.BooleanVar(value=False)
@@ -640,49 +683,49 @@ ACTIONS DISPONIBLES :
     tk.Checkbutton(options_frame, text="Marquer les multi-thèses (colonne 'Multi_These')", 
                   variable=flag_multithesis, font=("Helvetica", 11)).pack(anchor="w", pady=2)
     
-    # Boutons
+    # Buttons
     button_frame = tk.Frame(treatment_window)
     button_frame.pack(side="bottom", pady=20)
     
     def appliquer_traitement():
-        """Applique le traitement sélectionné"""
+        """Applies selected treatment"""
         try:
-            # Charger les données originales
+            # Load original data
             original_df = pd.read_csv(analysis_file)
             processed_df = original_df.copy()
             
             actions_performed = []
             indices_to_remove = set()
             
-            # Traiter les doublons
+            # Treat duplicates
             if remove_duplicates.get() and results['duplicate_cases']:
                 for case in results['duplicate_cases']:
-                    # Garder publication1, supprimer publication2
+                    # Keep publication1, remove publication2
                     indices_to_remove.add(case['publication2']['index'])
                 
                 actions_performed.append(f"Supprimé {len(set(case['publication2']['index'] for case in results['duplicate_cases']))} doublons")
             
-            # Traiter les collaborations
+            # Treat collaborations
             if remove_collaborations.get() and results['collaborator_cases']:
                 for case in results['collaborator_cases']:
-                    # Supprimer la collaboration, garder la thèse principale
+                    # Remove collaboration, keep main thesis
                     collab_index = case['collaboration']['row_data'].name
                     if collab_index in processed_df.index:
                         indices_to_remove.add(collab_index)
                 
                 actions_performed.append(f"Supprimé {len(results['collaborator_cases'])} collaborations")
             
-            # Supprimer les indices marqués
+            # Remove marked indices
             if indices_to_remove:
                 processed_df = processed_df.drop(indices_to_remove).reset_index(drop=True)
                 
             homonym_count = 0
             multithesis_count = 0
 
-            # Compter les homonymes 
+            # Count homonyms 
             if flag_homonyms.get() and results['homonym_cases']:
                 for case in results['homonym_cases']:
-                    # Compter les publications marquées comme homonymes potentiels
+                    # Count publications marked as potential homonyms
                     for pub_key in ['publication1', 'publication2']:
                         pub_index = case[pub_key]['index']
                         if pub_index in processed_df.index and pub_index not in indices_to_remove:
@@ -690,7 +733,7 @@ ACTIONS DISPONIBLES :
     
                 actions_performed.append(f"Identifié {homonym_count} publications comme homonymes potentiels (non marquées dans le fichier)")
 
-            # Compter les multi-thèses 
+            # Count multi-thesis 
             if flag_multithesis.get() and results['multi_thesis_cases']:
                 for case in results['multi_thesis_cases']:
                     for pub_key in ['publication1', 'publication2']:
@@ -700,7 +743,7 @@ ACTIONS DISPONIBLES :
     
                 actions_performed.append(f"Identifié {multithesis_count} publications comme multi-thèses (non marquées dans le fichier)")
             
-            # Sauvegarder le fichier traité
+            # Save processed file
             base_name = os.path.splitext(os.path.basename(analysis_file))[0]
             processed_filename = f"{base_name}_nettoye.csv"
             extraction_dir = 'extraction'
@@ -710,7 +753,7 @@ ACTIONS DISPONIBLES :
             processed_path = os.path.join(extraction_dir, processed_filename)
             processed_df.to_csv(processed_path, index=False)
 
-            # Message de succès
+            # Success message
             success_msg = f"TRAITEMENT TERMINÉ AVEC SUCCÈS\n\n"
             success_msg += f"Publications originales: {len(original_df)}\n"
             success_msg += f"Publications après traitement: {len(processed_df)}\n"
@@ -741,7 +784,13 @@ ACTIONS DISPONIBLES :
 
 
 def export_results_interface(results, analysis_file):
-    """Interface d'exportation des résultats"""
+    """
+    Results export interface
+    
+    Args:
+        results (dict): Analysis results
+        analysis_file (str): Path to analyzed file
+    """
     export_dir = filedialog.askdirectory(
         title="Choisir le dossier d'exportation",
         initialdir="extraction"
@@ -754,7 +803,7 @@ def export_results_interface(results, analysis_file):
         base_name = os.path.splitext(os.path.basename(analysis_file))[0]
         exported_files = []
         
-        # Exporter les doublons
+        # Export duplicates
         if results['duplicate_cases']:
             dup_df = pd.DataFrame([
                 {
@@ -775,7 +824,7 @@ def export_results_interface(results, analysis_file):
             dup_df.to_csv(dup_path, index=False)
             exported_files.append(dup_path)
         
-        # Exporter les homonymes
+        # Export homonyms
         if results['homonym_cases']:
             hom_df = pd.DataFrame([
                 {
@@ -798,7 +847,7 @@ def export_results_interface(results, analysis_file):
             hom_df.to_csv(hom_path, index=False)
             exported_files.append(hom_path)
         
-        # Exporter les multi-thèses
+        # Export multi-thesis
         if results['multi_thesis_cases']:
             multi_df = pd.DataFrame([
                 {
@@ -819,7 +868,7 @@ def export_results_interface(results, analysis_file):
             multi_df.to_csv(multi_path, index=False)
             exported_files.append(multi_path)
         
-        # Exporter les collaborations
+        # Export collaborations
         if results['collaborator_cases']:
             collab_df = pd.DataFrame([
                 {
@@ -836,7 +885,7 @@ def export_results_interface(results, analysis_file):
             collab_df.to_csv(collab_path, index=False)
             exported_files.append(collab_path)
         
-        # Exporter le résumé détaillé
+        # Export detailed summary
         summary_path = os.path.join(export_dir, f'{base_name}_resume_detecte.txt')
         with open(summary_path, 'w', encoding='utf-8') as f:
             f.write("RÉSUMÉ DE L'ANALYSE \n")
@@ -865,7 +914,7 @@ def export_results_interface(results, analysis_file):
         
         exported_files.append(summary_path)
         
-        # Message de succès
+        # Success message
         files_list = '\n'.join([f"   • {os.path.basename(f)}" for f in exported_files])
         messagebox.showinfo(
             "Exportation terminée",
@@ -877,7 +926,12 @@ def export_results_interface(results, analysis_file):
 
 
 def show_recommendations(results):
-    """Affiche des recommandations basées sur l'analyse"""
+    """
+    Displays recommendations based on analysis
+    
+    Args:
+        results (dict): Analysis results
+    """
     rec_window = Toplevel()
     rec_window.title("Recommandations")
     rec_window.geometry("700x600")
@@ -885,7 +939,7 @@ def show_recommendations(results):
     tk.Label(rec_window, text="Recommandations d'Actions", 
             font=("Helvetica", 16, "bold")).pack(pady=10)
     
-    # Analyse des résultats pour générer des recommandations
+    # Analyze results to generate recommendations
     recommendations = []
     
     if results['duplicate_cases']:
@@ -928,7 +982,7 @@ def show_recommendations(results):
             'action': 'Examen manuel requis - métadonnées HAL incomplètes'
         })
     
-    # Recommandations générales
+    # General recommendations
     if not any([results['duplicate_cases'], results['homonym_cases'], results['collaborator_cases']]):
         recommendations.append({
             'priority': 'INFO',
@@ -937,7 +991,7 @@ def show_recommendations(results):
             'action': 'Aucune action spécifique requise'
         })
     
-    # Affichage des recommandations
+    # Display recommendations
     canvas = tk.Canvas(rec_window)
     scrollbar = ttk.Scrollbar(rec_window, orient="vertical", command=canvas.yview)
     scrollable_frame = tk.Frame(canvas)
@@ -950,7 +1004,7 @@ def show_recommendations(results):
     canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
     canvas.configure(yscrollcommand=scrollbar.set)
     
-    # Couleurs par priorité
+    # Colors by priority
     priority_colors = {
         'HIGH': '#ffebee',
         'MEDIUM': '#fff3e0', 
@@ -963,7 +1017,7 @@ def show_recommendations(results):
                             bg=priority_colors.get(rec['priority'], '#f5f5f5'))
         rec_frame.pack(fill="x", padx=10, pady=5)
         
-        # En-tête avec priorité
+        # Header with priority
         header_frame = tk.Frame(rec_frame, bg=priority_colors.get(rec['priority'], '#f5f5f5'))
         header_frame.pack(fill="x", padx=5, pady=2)
         
@@ -982,7 +1036,7 @@ def show_recommendations(results):
                 bg=priority_colors.get(rec['priority'], '#f5f5f5'),
                 justify="left").pack(anchor="w", padx=5, pady=2)
         
-        # Action recommandée
+        # Recommended action
         tk.Label(rec_frame, text=f"Action: {rec['action']}", 
                 font=("Helvetica", 10, "italic"),
                 bg=priority_colors.get(rec['priority'], '#f5f5f5'),
@@ -991,11 +1045,11 @@ def show_recommendations(results):
     canvas.pack(side="left", fill="both", expand=True)
     scrollbar.pack(side="right", fill="y")
     
-    # Bouton fermer
+    # Close button
     tk.Button(rec_window, text="Fermer", command=rec_window.destroy,
              font=("Helvetica", 11), width=15).pack(side="bottom", pady=10)
 
 
-# Fonction lancer la détection dans app.py
 def remplacer_ancienne_detection():
+    """Function to launch detection in app.py"""
     return detection_doublons_homonymes

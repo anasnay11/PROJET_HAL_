@@ -1,6 +1,6 @@
-# config.py 
-
 # -*- coding: utf-8 -*-
+
+# config.py
 
 # Dictionary of predefined sensitivity levels
 SENSITIVITY_LEVELS = {
