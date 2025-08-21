@@ -27,6 +27,7 @@ def create_dashboard():
         <iframe src="employer_distribution.html"></iframe>
         <iframe src="theses_hdr_by_year.html"></iframe>
         <iframe src="theses_keywords_wordcloud.html"></iframe>
+        <iframe src="temporal_evolution_teams.html"></iframe>
     </body>
     </html>
     """

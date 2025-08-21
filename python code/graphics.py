@@ -544,3 +544,58 @@ def plot_theses_keywords_wordcloud(filename,
         # Save files
         fig.write_html(output_html)
         fig.write_image(output_png)
+        
+def plot_temporal_evolution_by_team(filename, output_html="html/temporal_evolution_teams.html", output_png="png/temporal_evolution_teams.png"):
+    """
+    Display an interactive line chart of publication evolution by research team over time.
+    """
+    
+    with graph_generation_lock:
+        
+        # Create directories to store html and png files
+        create_directories()
+        
+        df = pd.read_csv(filename)
+        
+        # Filter out unavailable laboratories
+        df_filtered = df[df['Laboratoire de Recherche'] != 'Non disponible'].copy()
+        
+        # Clean laboratory names for better display
+        df_filtered['Laboratoire de Recherche'] = (
+            df_filtered['Laboratoire de Recherche']
+            .str.replace(r"Laboratoire des sciences et techniques.*", "Lab-STICC", regex=True)
+            .str.replace(r"Inria.*", "Inria", regex=True)
+            .str.slice(0, 50)  # Limit length for better display
+        )
+        
+        # Group by laboratory and year
+        grouped = df_filtered.groupby(['Laboratoire de Recherche', 'Année de Publication']).size().reset_index(name='Nombre de publications')
+        
+        # Keep only top 10 most productive laboratories for readability
+        top_labs = df_filtered['Laboratoire de Recherche'].value_counts().head(10).index
+        grouped_top = grouped[grouped['Laboratoire de Recherche'].isin(top_labs)]
+        
+        # Create interactive line chart
+        fig = px.line(
+            grouped_top,
+            x='Année de Publication',
+            y='Nombre de publications',
+            color='Laboratoire de Recherche',
+            title="Évolution temporelle des publications par équipe de recherche",
+            labels={'Année de Publication': 'Année', 'Nombre de publications': 'Nombre de publications'},
+            markers=True
+        )
+        
+        # Customize layout
+        fig.update_layout(
+            xaxis_title="Année",
+            yaxis_title="Nombre de publications",
+            legend_title="Laboratoire de Recherche",
+            hovermode='x unified'
+        )
+        
+        # Save files
+        fig.write_html(output_html)
+        fig.write_image(output_png)
+
+

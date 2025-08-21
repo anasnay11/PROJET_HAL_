@@ -40,26 +40,165 @@ def is_same_author_levenshtein(nom_csv, prenom_csv, nom_hal, prenom_hal, thresho
     
     return normal_match or inverted_match
 
-def extract_author_id_simple(nom, prenom, threshold=DEFAULT_THRESHOLD):
+def extract_author_id_simple(nom, prenom, threshold=2):
     """
-    Extract HAL identifier with verification - with double query (prenom nom + nom prenom)
+    Extract HAL identifier"
     
     Handles complex cases:
-    - Hyphens in last names/first names 
-    - Removed spaces 
-    - Compound last name or first name 
+    - Hyphens in last names/first names
+    - Removed spaces
+    - Compound last name or first name
     - Partial IDs (e.g: last name only)
     - Short formats (e.g: initials)
-    - Different name orders (Prenom Nom vs Nom Prenom)
+    - Duplicate names (same first name and last name)
     
     Args:
-        nom (str): Nom de famille
-        prenom (str): Prénom
-        threshold (int): Seuil de distance Levenshtein acceptable
+        nom (str): Last name
+        prenom (str): First name
+        threshold (int): Acceptable Levenshtein distance threshold
     
     Returns:
         str: authIdHal_s if found and verified, otherwise "Id non disponible"
     """
+    
+    # Special handling for cases where first name equals last name
+    is_duplicate_name = nom.lower().strip() == prenom.lower().strip()
+    
+    if is_duplicate_name:
+        # Use stricter threshold for duplicate names
+        threshold = min(threshold, 1)
+        
+        # Specialized Handling for Duplicate Names
+        query_url = f'https://api.archives-ouvertes.fr/search/?q=authFirstName_s:"{prenom}" AND authLastName_s:"{nom}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=50'
+        
+        try:
+            response = requests.get(query_url)
+            if response.status_code == 200:
+                data = response.json()
+                publications = data.get("response", {}).get("docs", [])
+                
+                valid_candidates = []
+                
+                for pub in publications:
+                    auth_ids = pub.get("authIdHal_s", [])
+                    auth_first_names = pub.get("authFirstName_s", [])
+                    auth_last_names = pub.get("authLastName_s", [])
+                    auth_full_names = pub.get("authFullName_s", [])
+                    
+                    # Verification with all available fields
+                    if len(auth_ids) == len(auth_first_names) == len(auth_last_names):
+                        for i, auth_id in enumerate(auth_ids):
+                            if auth_id and not auth_id.lower().startswith("hal"):
+                                hal_first = auth_first_names[i] if i < len(auth_first_names) else ""
+                                hal_last = auth_last_names[i] if i < len(auth_last_names) else ""
+                                hal_full = auth_full_names[i] if i < len(auth_full_names) else ""
+                                
+                                # Very strict validation for identical names
+                                first_match = levenshtein_distance(prenom.lower(), hal_first.lower()) <= threshold
+                                last_match = levenshtein_distance(nom.lower(), hal_last.lower()) <= threshold
+                                
+                                # Additional validation with full name
+                                expected_full_name = f"{prenom} {nom}".lower()
+                                full_name_match = False
+                                if hal_full:
+                                    full_name_match = levenshtein_distance(expected_full_name, hal_full.lower()) <= threshold
+                                
+                                # All conditions must be true for duplicate names
+                                if first_match and last_match and (full_name_match or not hal_full):
+                                    confidence_score = int(first_match) + int(last_match) + int(full_name_match)
+                                    valid_candidates.append({
+                                        'id': auth_id,
+                                        'confidence': confidence_score
+                                    })
+                
+                if valid_candidates:
+                    # Return candidate with highest confidence
+                    valid_candidates.sort(key=lambda x: x['confidence'], reverse=True)
+                    return valid_candidates[0]['id']
+                    
+        except Exception:
+            pass
+    
+    # STANDARD HANDLING FOR REGULAR NAMES (or fallback for duplicate names)
+    
+    # Multiple query strategies for better precision
+    if is_duplicate_name:
+        # For duplicate names, use only the most precise strategies
+        query_strategies = [
+            f'https://api.archives-ouvertes.fr/search/?q=authFirstName_s:"{prenom}" AND authLastName_s:"{nom}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=100',
+            f'https://api.archives-ouvertes.fr/search/?q=authFullName_s:"{prenom} {nom}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=100'
+        ]
+    else:
+        # For regular names, use all strategies
+        query_strategies = [
+            # Strategy 1: Search individual fields (most precise)
+            f'https://api.archives-ouvertes.fr/search/?q=authFirstName_s:"{prenom}" AND authLastName_s:"{nom}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=100',
+            
+            # Strategy 2: Exact string match
+            f'https://api.archives-ouvertes.fr/search/?q=authFullName_s:"{prenom} {nom}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=100',
+            
+            # Strategy 3: Fallback to text search
+            f'https://api.archives-ouvertes.fr/search/?q=authFullName_t:"{prenom} {nom}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=100'
+        ]
+    
+    all_candidates = []
+    
+    for strategy_index, query_url in enumerate(query_strategies):
+        try:
+            response = requests.get(query_url)
+            if response.status_code != 200:
+                continue
+            
+            data = response.json()
+            publications = data.get("response", {}).get("docs", [])
+            
+            if not publications:
+                continue
+            
+            # Collect candidates with verification
+            for pub in publications:
+                auth_ids = pub.get("authIdHal_s", [])
+                auth_first_names = pub.get("authFirstName_s", [])
+                auth_last_names = pub.get("authLastName_s", [])
+                
+                # Verify that lists have the same length
+                if len(auth_ids) == len(auth_first_names) == len(auth_last_names):
+                    for i, auth_id in enumerate(auth_ids):
+                        # Exclude document-like IDs such as "hal-xxxxxxx"
+                        if auth_id and not auth_id.lower().startswith("hal"):
+                            hal_first_name = auth_first_names[i] if i < len(auth_first_names) else ""
+                            hal_last_name = auth_last_names[i] if i < len(auth_last_names) else ""
+                            
+                            # Strict verification with author metadata
+                            if is_same_author_levenshtein(nom, prenom, hal_last_name, hal_first_name, threshold):
+                                all_candidates.append({
+                                    'id': auth_id,
+                                    'hal_first': hal_first_name,
+                                    'hal_last': hal_last_name,
+                                    'strategy': strategy_index + 1
+                                })
+            
+            # For duplicate names, stop early if we find candidates with precise strategies
+            if is_duplicate_name and all_candidates and strategy_index < 1:
+                break
+            # For regular names, stop early if we find candidates with strategy 1 or 2
+            elif not is_duplicate_name and all_candidates and strategy_index < 2:
+                break
+                    
+        except Exception:
+            continue
+    
+    if all_candidates:
+        # Prioritize results from the most precise strategies
+        all_candidates.sort(key=lambda x: x['strategy'])
+        return all_candidates[0]['id']
+    
+    # If no candidates found with structured queries, fall back to complex matching
+    # This is only for regular names (not duplicate names to avoid false positives)
+    if is_duplicate_name:
+        return "Id non disponible"
+    
+    # COMPLEX FALLBACK METHOD FOR REGULAR NAMES ONLY
     
     # Double query to handle both name orders
     query_urls = [
@@ -82,7 +221,8 @@ def extract_author_id_simple(nom, prenom, threshold=DEFAULT_THRESHOLD):
             for pub in publications:
                 auth_ids = pub.get("authIdHal_s", [])
                 for auth_id in auth_ids:
-                    if auth_id:
+                    # Exclude document-like IDs such as "hal-xxxxxxx"
+                    if auth_id and not auth_id.lower().startswith("hal"):
                         all_author_ids.add(auth_id)
                         
         except Exception:
@@ -91,7 +231,7 @@ def extract_author_id_simple(nom, prenom, threshold=DEFAULT_THRESHOLD):
     # If no IDs found from either query
     if not all_author_ids:
         return "Id non disponible"
-                
+            
     # AUTHOR VARIANTS PREPARATION
     
     # Normalize last name and first name (lowercase, no multiple spaces)

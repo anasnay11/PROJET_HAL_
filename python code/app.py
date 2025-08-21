@@ -30,6 +30,7 @@ from graphics import (
     plot_employer_distribution,
     plot_theses_hdr_by_year,
     plot_theses_keywords_wordcloud,
+    plot_temporal_evolution_by_team,
 )
 from detection_doublons_homonymes import DuplicateHomonymDetector
 from integration import detection_doublons_homonymes
@@ -743,7 +744,8 @@ def generate_graphs_thread():
             (plot_publications_trends, "publication_trends"),
             (plot_employer_distribution, "employer_distribution"),
             (plot_theses_hdr_by_year, "theses_hdr_by_year"),
-            (plot_theses_keywords_wordcloud, "theses_keywords_wordcloud")
+            (plot_theses_keywords_wordcloud, "theses_keywords_wordcloud"),
+            (plot_temporal_evolution_by_team, "temporal_evolution_teams")
         ]
         
         # Wrapper function using pre-loaded data
