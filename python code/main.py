@@ -28,6 +28,7 @@ from graphics import (
     plot_employer_distribution, 
     plot_theses_hdr_by_year, 
     plot_theses_keywords_wordcloud,
+    plot_temporal_evolution_by_team,
     )
 
 def create_progress_bar(current, total, description="Progress", bar_length=50):
@@ -883,9 +884,7 @@ def main():
             plot_employer_distribution(output_path, output_html="html/employer_distribution.html", output_png="png/employer_distribution.png")
             plot_theses_hdr_by_year(output_path, output_html="html/theses_hdr_by_year.html", output_png="png/theses_hdr_by_year.png")
             plot_theses_keywords_wordcloud(output_path, output_html="html/theses_keywords_wordcloud.html", output_png="png/theses_keywords_wordcloud.png")
-            # plot_temporal_evolution_by_team(output_path, output_html="html/temporal_evolution_teams.html", output_png="png/temporal_evolution_teams.png")
-            # plot_collaboration_network(output_path, output_html="html/collaboration_network.html", output_png="png/collaboration_network.png")
-            # plot_productivity_comparison(output_path, output_html="html/productivity_comparison.html", output_png="png/productivity_comparison.png")
+            plot_temporal_evolution_by_team(output_path, output_html="html/temporal_evolution_teams.html", output_png="png/temporal_evolution_teams.png")
             
             dashboard_file = create_dashboard()
             webbrowser.open("file://" + os.path.realpath(dashboard_file))

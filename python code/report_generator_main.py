@@ -28,7 +28,7 @@ def generate_html_report(nom_fichier_csv):
         nom_fichier_csv = nom_fichier_csv.replace('.csv', '')
     output_path = os.path.join(report_directory, f"{nom_fichier_csv}.html")
 
-    # Define image paths
+    # Define image paths - AJOUT DU NOUVEAU GRAPHIQUE
     image_paths = [
         "png/pubs_by_year.png",
         "png/type_distribution.png", 
@@ -39,7 +39,8 @@ def generate_html_report(nom_fichier_csv):
         "png/publication_trends.png",
         "png/employer_distribution.png",
         "png/theses_hdr_by_year.png",
-        "png/theses_keywords_wordcloud.png"
+        "png/theses_keywords_wordcloud.png",
+        "png/temporal_evolution_teams.png"  # AJOUTÉ
     ]
 
     # Check that all images exist
@@ -264,7 +265,7 @@ def generate_html_report(nom_fichier_csv):
         
         <div class="content">"""
 
-    # Title definitions and image existence checking
+    # Title definitions and image existence checking - AJOUT DU NOUVEAU TITRE
     graph_titles = [
         "1. Nombre de publications par année",
         "2. Répartition des types de documents", 
@@ -275,7 +276,8 @@ def generate_html_report(nom_fichier_csv):
         "7. Tendances des publications par année",
         "8. Répartition des publications par employeur",
         "9. Thèses et HDR soutenues par année",
-        "10. Nuage de mots-clés des thèses/HDR"
+        "10. Nuage de mots-clés des thèses/HDR",
+        "11. Évolution des publications par équipe de recherche dans le temps"  # AJOUTÉ
     ]
 
     # Add graph sections
@@ -338,7 +340,7 @@ def generate_latex_report(nom_fichier_csv):
         nom_fichier_csv = nom_fichier_csv.replace('.csv', '')
     output_path = os.path.join(report_directory, f"{nom_fichier_csv}.tex")
 
-    # Absolute image paths
+    # Absolute image paths 
     image_paths = [
         "png/pubs_by_year.png",
         "png/type_distribution.png",
@@ -349,7 +351,8 @@ def generate_latex_report(nom_fichier_csv):
         "png/publication_trends.png",
         "png/employer_distribution.png",
         "png/theses_hdr_by_year.png",
-        "png/theses_keywords_wordcloud.png"
+        "png/theses_keywords_wordcloud.png",
+        "png/temporal_evolution_teams.png"  
     ]
 
     # Check that all images exist
@@ -392,6 +395,10 @@ def generate_latex_report(nom_fichier_csv):
         \item Top 10 des auteurs les plus prolifiques
         \item Publications par structure et par année
         \item Tendances des publications par année
+        \item Répartition des publications par employeur
+        \item Thèses et HDR soutenues par année
+        \item Nuage de mots-clés des thèses/HDR
+        \item Évolution des publications par équipe de recherche dans le temps
     \end{{itemize}}
 
     \newpage
@@ -436,6 +443,10 @@ def generate_latex_report(nom_fichier_csv):
 
     \subsection*{{10. Nuage de mots-clés des thèses/HDR}}
     \includegraphics[width=\textwidth]{{{relative_image_paths[9]}}}
+    \newpage
+
+    \subsection*{{11. Évolution des publications par équipe de recherche dans le temps}}
+    \includegraphics[width=\textwidth]{{{relative_image_paths[10]}}}
 
     \end{{document}}
     """
