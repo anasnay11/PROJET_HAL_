@@ -10,7 +10,7 @@ import pandas as pd
 import os
 import webbrowser
 import json
-from hal_data import get_hal_data
+from hal_data import get_hal_data, get_all_id, extract_author_id_simple
 from mapping import list_domains, list_types
 from utils import generate_filename
 from config import get_threshold_from_level, get_level_from_threshold, list_sensitivity_levels, DEFAULT_THRESHOLD
@@ -215,15 +215,21 @@ def charger_csv():
             global scientists_df, fichier_charge
             scientists_df = pd.read_csv(fichier_csv, encoding='utf-8-sig')
             fichier_charge = True
+            
+            # Store the filename for later use
+            root.current_csv_filename = os.path.basename(fichier_csv)
+            
             messagebox.showinfo("Succès", f"Fichier chargé : {fichier_csv}")
             afficher_boutons_options()
         except Exception as e:
             messagebox.showerror("Erreur", f"Impossible de charger le fichier CSV : {e}")
 
+
 def afficher_boutons_options():
     """Show option buttons after loading"""
     btn_extraire.pack(pady=5)
     btn_filtrer.pack(pady=5)
+    btn_extraire_id.pack(pady=5)
 
 def afficher_recapitulatif_extraction(periode=None, types=None, domaines=None):
     """
@@ -335,6 +341,174 @@ def afficher_recapitulatif_extraction(periode=None, types=None, domaines=None):
     tk.Button(button_frame, text="Confirmer et lancer", command=confirmer_extraction,
               font=("Helvetica", 11, "bold"), bg="#4CAF50", fg="white", width=18).pack(side="left", padx=10)
 
+def extraire_identifiants():
+    """Extract HAL identifiers with summary"""
+    afficher_recapitulatif_extraction_id()
+
+def afficher_recapitulatif_extraction_id():
+    """
+    Display a summary for identifier extraction
+    """
+    # Build summary message
+    message = "Vous avez choisi d'extraire les identifiants HAL"
+    details = "Extraction des identifiants HAL pour tous les scientifiques du fichier"
+    
+    # Confirmation window
+    recap_window = tk.Toplevel(root)
+    recap_window.title("Récapitulatif de l'extraction des identifiants")
+    recap_window.geometry("500x300")
+    recap_window.resizable(False, False)
+    
+    # Center window
+    recap_window.transient(root)
+    recap_window.grab_set()
+    
+    # Title
+    title_label = tk.Label(recap_window, text="Récapitulatif de l'extraction", 
+                          font=("Helvetica", 16, "bold"))
+    title_label.pack(pady=15)
+    
+    # Main message
+    message_label = tk.Label(recap_window, text=message, 
+                            font=("Helvetica", 12), wraplength=450)
+    message_label.pack(pady=10)
+    
+    # Details in a frame
+    details_frame = tk.Frame(recap_window, relief="ridge", bd=2, bg="#f8f8f8")
+    details_frame.pack(pady=15, padx=20, fill="x")
+    
+    details_label = tk.Label(details_frame, text=details, 
+                            font=("Helvetica", 10), justify="left", bg="#f8f8f8")
+    details_label.pack(pady=10, padx=10)
+    
+    # Information about number of scientists
+    nb_scientifiques = len(scientists_df)
+    info_label = tk.Label(recap_window, 
+                         text=f"Nombre de scientifiques à traiter : {nb_scientifiques}",
+                         font=("Helvetica", 10, "italic"), fg="gray")
+    info_label.pack(pady=5)
+    
+    # Configuration information
+    level_name = get_level_from_threshold(current_threshold)
+    config_label = tk.Label(recap_window, 
+                           text=f"Sensibilité de correspondance : {level_name.title()} (distance = {current_threshold})",
+                           font=("Helvetica", 9, "italic"), fg="gray")
+    config_label.pack(pady=2)
+    
+    # Frame for buttons
+    button_frame = tk.Frame(recap_window)
+    button_frame.pack(side="bottom", pady=20)
+    
+    def confirmer_extraction_id():
+        recap_window.destroy()
+        # Start identifier extraction
+        init_extraction_widgets()
+        message_label_extraction.config(text="Extraction des identifiants en cours... : 0%")
+        progress_bar.pack(pady=5)
+        progress_bar["value"] = 0
+        root.update_idletasks()
+        
+        # Start extraction
+        extraction_identifiants()
+    
+    def annuler_extraction():
+        recap_window.destroy()
+    
+    # Buttons
+    tk.Button(button_frame, text="Annuler", command=annuler_extraction,
+              font=("Helvetica", 11), width=12).pack(side="left", padx=10)
+    
+    tk.Button(button_frame, text="Confirmer et lancer", command=confirmer_extraction_id,
+              font=("Helvetica", 11, "bold"), bg="#4CAF50", fg="white", width=18).pack(side="left", padx=10)
+
+def extraction_identifiants():
+    """
+    Main identifier extraction function with parallel processing
+    
+    Runs extraction in separate thread with progress tracking and stop capability
+    """
+    global stop_extraction, message_label_extraction, progress_bar
+
+    init_extraction_widgets()  
+
+    # Immediate update to show message and progress bar
+    message_label_extraction.config(text="Extraction des identifiants en cours... : 0%")
+    progress_bar.pack(pady=5)
+    progress_bar["value"] = 0
+    root.update_idletasks()  # Force GUI update
+
+    # Disable buttons during extraction
+    btn_extraire.config(state="disabled")
+    btn_filtrer.config(state="disabled")
+    btn_extraire_id.config(state="disabled")
+    btn_charger.config(state="disabled")
+
+    stop_extraction = False  # Reset stop variable
+
+    def extraction_task():
+        global stop_extraction
+        # Create result DataFrame with original data
+        result_df = scientists_df.copy()
+        result_df['IdHAL'] = ''  # Initialize IdHAL column
+        
+        total_rows = len(scientists_df)
+        progress_bar["maximum"] = total_rows
+
+        with ThreadPoolExecutor(max_workers=100) as executor:
+            futures = {
+                executor.submit(extract_author_id_simple, 
+                              row.get('title', ''), row.get('nom', ''), row.get('prenom', ''),
+                              threshold=current_threshold): index 
+                for index, row in scientists_df.iterrows()
+            }
+            
+            for future in as_completed(futures):
+                if stop_extraction:
+                    break
+                
+                index = futures[future]
+                try:
+                    hal_id = future.result()
+                    result_df.at[index, 'IdHAL'] = hal_id
+                except Exception as e:
+                    result_df.at[index, 'IdHAL'] = "Id non disponible"
+                    print(f"Erreur pour l'index {index}: {str(e)}")
+                
+                # Update progress bar and message
+                completed = index + 1
+                progress_percentage = int((completed / total_rows) * 100)
+                root.after(0, lambda: progress_bar.step(1))
+                root.after(0, lambda p=progress_percentage: message_label_extraction.config(text=f"Extraction des identifiants en cours... : {p}%"))
+
+        # End extraction and save results
+        if not stop_extraction:
+            extraction_directory = create_extraction_folder()
+            
+            # Get original filename without extension
+            if hasattr(root, 'current_csv_filename'):
+                base_filename = os.path.splitext(root.current_csv_filename)[0]
+            else:
+                base_filename = "extraction"
+            
+            filename = f"{base_filename}_hal_id.csv"
+            output_path = os.path.join(extraction_directory, filename)
+            result_df.to_csv(output_path, index=False, encoding='utf-8-sig')
+            root.after(0, lambda: message_label_extraction.config(text="Extraction des identifiants terminée."))
+            root.after(0, lambda: messagebox.showinfo("Extraction terminée", f"Les identifiants HAL ont été sauvegardés dans : {output_path}"))
+
+        # Re-enable buttons after extraction
+        root.after(0, lambda: btn_extraire.config(state="normal"))
+        root.after(0, lambda: btn_filtrer.config(state="normal"))
+        root.after(0, lambda: btn_extraire_id.config(state="normal"))
+        root.after(0, lambda: btn_charger.config(state="disabled"))
+        root.after(0, progress_bar.pack_forget)
+        root.after(0, message_label_extraction.pack_forget)
+        root.after(0, btn_stop_extraction.pack_forget)
+
+    # Start extraction in separate thread
+    thread = threading.Thread(target=extraction_task)
+    thread.start()
+    
 def extraire_toutes_les_donnees():
     """Extract all data with summary"""
     afficher_recapitulatif_extraction()
@@ -565,7 +739,7 @@ def extraction_data(periode, types, domaines):
 
         with ThreadPoolExecutor(max_workers=100) as executor:
             futures = {
-                executor.submit(get_hal_data, row['nom'], row['prenom'], 
+                executor.submit(get_hal_data, row['title'], row['nom'], row['prenom'], 
                               period=periode, domain_filter=domaines, type_filter=types,
                               threshold=current_threshold): index 
                 for index, row in scientists_df.iterrows()
@@ -966,6 +1140,7 @@ btn_charger.pack(pady=5)
 
 btn_extraire = tk.Button(frame_extraction, text="Extraire toutes les données", font=("Helvetica", 12), command=extraire_toutes_les_donnees)
 btn_filtrer = tk.Button(frame_extraction, text="Appliquer des filtres d'extraction", font=("Helvetica", 12), command=appliquer_filtres)
+btn_extraire_id = tk.Button(frame_extraction, text="Extraire les identifiants", font=("Helvetica", 12), command=extraire_identifiants)
 
 # Analysis Frame
 frame_analyse = ttk.Frame(notebook)

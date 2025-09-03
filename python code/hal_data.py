@@ -8,68 +8,107 @@ from Levenshtein import distance as levenshtein_distance
 from mapping import map_doc_type, map_domain, get_domain_code, get_type_code, get_linked_types, get_hal_filter_for_post_processing
 from config import DEFAULT_THRESHOLD
 
-def is_same_author_levenshtein(nom_csv, prenom_csv, nom_hal, prenom_hal, threshold=DEFAULT_THRESHOLD):
+def is_same_author_levenshtein(title_csv, title_hal, threshold=DEFAULT_THRESHOLD):
     """
-    Directly compare a CSV author with an author found in HAL
-    Handles cases where HAL metadata has inverted first/last name fields
+    Compare a CSV title with a title found in HAL
+    Also handles fallback comparison with nom/prenom for backward compatibility
     
     Args:
-        nom_csv, prenom_csv: last name and first name from CSV file (ORIGINAL)
-        nom_hal, prenom_hal: last name and first name found in HAL results
+        title_csv: title from CSV file (ORIGINAL) or can be "nom prenom" format
+        title_hal: title found in HAL results or authFullName
         threshold: acceptable distance threshold (configurable)
     
     Returns:
-        bool: True if authors match
+        bool: True if titles/names match
     """
-    if not nom_hal or not prenom_hal:
+    if not title_hal or not title_csv:
         return False 
     
-    # Calculate distances
-    # Test 1: Normal order (CSV nom with HAL nom, CSV prenom with HAL prenom)
-    dist_nom_normal = levenshtein_distance(nom_csv.lower(), nom_hal.lower())
-    dist_prenom_normal = levenshtein_distance(prenom_csv.lower(), prenom_hal.lower())
+    # Clean and normalize strings
+    title_csv_clean = title_csv.lower().strip()
+    title_hal_clean = title_hal.lower().strip()
     
-    # Test 2: Inverted order (CSV nom with HAL prenom, CSV prenom with HAL nom)
-    # This handles cases where HAL has authLastName_s and authFirstName_s swapped
-    dist_nom_inverted = levenshtein_distance(nom_csv.lower(), prenom_hal.lower())
-    dist_prenom_inverted = levenshtein_distance(prenom_csv.lower(), nom_hal.lower())
+    # Calculate direct distance
+    dist_direct = levenshtein_distance(title_csv_clean, title_hal_clean)
     
-    # Match if either order works
-    normal_match = (dist_nom_normal <= threshold and dist_prenom_normal <= threshold)
-    inverted_match = (dist_nom_inverted <= threshold and dist_prenom_inverted <= threshold)
+    # Direct match
+    if dist_direct <= threshold:
+        return True
     
-    return normal_match or inverted_match
+    # For backward compatibility, also try name-based matching
+    # If title_csv looks like "firstname lastname" format
+    csv_parts = title_csv_clean.split()
+    hal_parts = title_hal_clean.split()
+    
+    if len(csv_parts) >= 2 and len(hal_parts) >= 2:
+        # Try normal order (first last) vs (first last)
+        csv_first = csv_parts[0]
+        csv_last = " ".join(csv_parts[1:])
+        hal_first = hal_parts[0] 
+        hal_last = " ".join(hal_parts[1:])
+        
+        dist_first_normal = levenshtein_distance(csv_first, hal_first)
+        dist_last_normal = levenshtein_distance(csv_last, hal_last)
+        
+        # Try inverted order (first last) vs (last first)
+        hal_first_inv = hal_parts[-1]
+        hal_last_inv = " ".join(hal_parts[:-1])
+        
+        dist_first_inverted = levenshtein_distance(csv_first, hal_first_inv)
+        dist_last_inverted = levenshtein_distance(csv_last, hal_last_inv)
+        
+        # Match if either order works
+        normal_match = (dist_first_normal <= threshold and dist_last_normal <= threshold)
+        inverted_match = (dist_first_inverted <= threshold and dist_last_inverted <= threshold)
+        
+        return normal_match or inverted_match
+    
+    return False
 
-def extract_author_id_simple(nom, prenom, threshold=2):
+def extract_author_id_simple(title, nom=None, prenom=None, threshold=2):
     """
-    Extract HAL identifier"
+    Extract HAL identifier using title as primary method, with nom/prenom as fallback
     
     Handles complex cases:
-    - Hyphens in last names/first names
-    - Removed spaces
-    - Compound last name or first name
-    - Partial IDs (e.g: last name only)
-    - Short formats (e.g: initials)
-    - Duplicate names (same first name and last name)
+    - Title-based matching
+    - Fallback to name-based matching
+    - Hyphens in names
+    - Compound names
+    - Partial IDs
+    - Short formats (initials)
+    - Duplicate names
     
     Args:
-        nom (str): Last name
-        prenom (str): First name
+        title (str): Title/full name from CSV
+        nom (str): Last name (fallback)
+        prenom (str): First name (fallback)  
         threshold (int): Acceptable Levenshtein distance threshold
     
     Returns:
         str: authIdHal_s if found and verified, otherwise "Id non disponible"
     """
     
-    # Special handling for cases where first name equals last name
-    is_duplicate_name = nom.lower().strip() == prenom.lower().strip()
+    # If no title provided, fall back to nom/prenom
+    if not title or not title.strip():
+        if nom and prenom:
+            title = f"{prenom} {nom}"
+        else:
+            return "Id non disponible"
+    
+    title_clean = title.strip()
+    
+    # Special handling for cases where title looks like duplicate name (first name equals last name)
+    title_parts = title_clean.lower().split()
+    is_duplicate_name = (len(title_parts) == 2 and title_parts[0] == title_parts[1])
     
     if is_duplicate_name:
         # Use stricter threshold for duplicate names
         threshold = min(threshold, 1)
         
         # Specialized Handling for Duplicate Names
-        query_url = f'https://api.archives-ouvertes.fr/search/?q=authFirstName_s:"{prenom}" AND authLastName_s:"{nom}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=50'
+        prenom_part = title_parts[0]
+        nom_part = title_parts[1]
+        query_url = f'https://api.archives-ouvertes.fr/search/?q=authFirstName_s:"{prenom_part}" AND authLastName_s:"{nom_part}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=50'
         
         try:
             response = requests.get(query_url)
@@ -94,11 +133,11 @@ def extract_author_id_simple(nom, prenom, threshold=2):
                                 hal_full = auth_full_names[i] if i < len(auth_full_names) else ""
                                 
                                 # Very strict validation for identical names
-                                first_match = levenshtein_distance(prenom.lower(), hal_first.lower()) <= threshold
-                                last_match = levenshtein_distance(nom.lower(), hal_last.lower()) <= threshold
+                                first_match = levenshtein_distance(prenom_part, hal_first.lower()) <= threshold
+                                last_match = levenshtein_distance(nom_part, hal_last.lower()) <= threshold
                                 
                                 # Additional validation with full name
-                                expected_full_name = f"{prenom} {nom}".lower()
+                                expected_full_name = f"{prenom_part} {nom_part}".lower()
                                 full_name_match = False
                                 if hal_full:
                                     full_name_match = levenshtein_distance(expected_full_name, hal_full.lower()) <= threshold
@@ -119,26 +158,26 @@ def extract_author_id_simple(nom, prenom, threshold=2):
         except Exception:
             pass
     
-    # STANDARD HANDLING FOR REGULAR NAMES (or fallback for duplicate names)
+    # STANDARD HANDLING FOR REGULAR TITLES/NAMES (or fallback for duplicate names)
     
     # Multiple query strategies for better precision
     if is_duplicate_name:
         # For duplicate names, use only the most precise strategies
         query_strategies = [
-            f'https://api.archives-ouvertes.fr/search/?q=authFirstName_s:"{prenom}" AND authLastName_s:"{nom}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=100',
-            f'https://api.archives-ouvertes.fr/search/?q=authFullName_s:"{prenom} {nom}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=100'
+            f'https://api.archives-ouvertes.fr/search/?q=authFullName_s:"{title_clean}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=100',
+            f'https://api.archives-ouvertes.fr/search/?q=authFullName_t:"{title_clean}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=100'
         ]
     else:
-        # For regular names, use all strategies
+        # For regular titles/names, use all strategies
         query_strategies = [
-            # Strategy 1: Search individual fields (most precise)
-            f'https://api.archives-ouvertes.fr/search/?q=authFirstName_s:"{prenom}" AND authLastName_s:"{nom}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=100',
+            # Strategy 1: Search by authFullName (most precise)
+            f'https://api.archives-ouvertes.fr/search/?q=authFullName_s:"{title_clean}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=100',
             
-            # Strategy 2: Exact string match
-            f'https://api.archives-ouvertes.fr/search/?q=authFullName_s:"{prenom} {nom}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=100',
+            # Strategy 2: Exact string match in fullname text
+            f'https://api.archives-ouvertes.fr/search/?q=authFullName_t:"{title_clean}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=100',
             
-            # Strategy 3: Fallback to text search
-            f'https://api.archives-ouvertes.fr/search/?q=authFullName_t:"{prenom} {nom}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=100'
+            # Strategy 3: Fallback to general text search
+            f'https://api.archives-ouvertes.fr/search/?q=text:"{title_clean}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=100'
         ]
     
     all_candidates = []
@@ -160,6 +199,7 @@ def extract_author_id_simple(nom, prenom, threshold=2):
                 auth_ids = pub.get("authIdHal_s", [])
                 auth_first_names = pub.get("authFirstName_s", [])
                 auth_last_names = pub.get("authLastName_s", [])
+                auth_full_names = pub.get("authFullName_s", [])
                 
                 # Verify that lists have the same length
                 if len(auth_ids) == len(auth_first_names) == len(auth_last_names):
@@ -168,13 +208,22 @@ def extract_author_id_simple(nom, prenom, threshold=2):
                         if auth_id and not auth_id.lower().startswith("hal"):
                             hal_first_name = auth_first_names[i] if i < len(auth_first_names) else ""
                             hal_last_name = auth_last_names[i] if i < len(auth_last_names) else ""
+                            hal_full_name = auth_full_names[i] if i < len(auth_full_names) else ""
                             
-                            # Strict verification with author metadata
-                            if is_same_author_levenshtein(nom, prenom, hal_last_name, hal_first_name, threshold):
+                            # Primary verification with title matching
+                            title_match = is_same_author_levenshtein(title_clean, hal_full_name, threshold)
+                            
+                            # Secondary verification for backward compatibility
+                            name_match = False
+                            if not title_match and nom and prenom:
+                                name_match = is_same_author_levenshtein(f"{prenom} {nom}", hal_full_name, threshold)
+                            
+                            if title_match or name_match:
                                 all_candidates.append({
                                     'id': auth_id,
                                     'hal_first': hal_first_name,
                                     'hal_last': hal_last_name,
+                                    'hal_full': hal_full_name,
                                     'strategy': strategy_index + 1
                                 })
             
@@ -198,12 +247,23 @@ def extract_author_id_simple(nom, prenom, threshold=2):
     if is_duplicate_name:
         return "Id non disponible"
     
-    # COMPLEX FALLBACK METHOD FOR REGULAR NAMES ONLY
+    # COMPLEX FALLBACK METHOD FOR REGULAR TITLES/NAMES ONLY
     
-    # Double query to handle both name orders
+    # Parse title into potential name components
+    title_words = title_clean.lower().split()
+    if len(title_words) >= 2:
+        potential_prenom = title_words[0]
+        potential_nom = " ".join(title_words[1:])
+    elif nom and prenom:
+        potential_prenom = prenom.lower()
+        potential_nom = nom.lower()
+    else:
+        return "Id non disponible"
+    
+    # Double query to handle both name orders  
     query_urls = [
-        f'https://api.archives-ouvertes.fr/search/?q=authFullName_t:"{prenom} {nom}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=100',
-        f'https://api.archives-ouvertes.fr/search/?q=authFullName_t:"{nom} {prenom}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=100'
+        f'https://api.archives-ouvertes.fr/search/?q=authFullName_t:"{potential_prenom} {potential_nom}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=100',
+        f'https://api.archives-ouvertes.fr/search/?q=authFullName_t:"{potential_nom} {potential_prenom}"&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=100'
     ]
     
     all_author_ids = set()  # Use a set to avoid duplicates across both queries
@@ -234,9 +294,9 @@ def extract_author_id_simple(nom, prenom, threshold=2):
             
     # AUTHOR VARIANTS PREPARATION
     
-    # Normalize last name and first name (lowercase, no multiple spaces)
-    nom_clean = nom.strip().lower()
-    prenom_clean = prenom.strip().lower()
+    # Normalize names (lowercase, no multiple spaces)
+    nom_clean = potential_nom.strip()
+    prenom_clean = potential_prenom.strip()
     
     # Create all possible variants of last name/first name
     def create_variants(text):
@@ -457,13 +517,14 @@ def execute_hal_query(query_url):
     except Exception:
         return []
 
-def get_hal_data(nom, prenom, period=None, domain_filter=None, type_filter=None, threshold=DEFAULT_THRESHOLD):
+def get_hal_data(nom, prenom, title=None, period=None, domain_filter=None, type_filter=None, threshold=DEFAULT_THRESHOLD):
     """
-    Main function with granular thesis/HDR filtering
+    Main function with title-based search as primary method and name/firstname as fallback
     
     Args:
         nom (str): Nom de famille
-        prenom (str): Prénom
+        prenom (str): Prénom  
+        title (str): Title from CSV (primary search method)
         period (str): Période au format "YYYY-YYYY"
         domain_filter (list): Liste des domaines à filtrer
         type_filter (list): Liste des types de documents à filtrer
@@ -473,43 +534,77 @@ def get_hal_data(nom, prenom, period=None, domain_filter=None, type_filter=None,
         pd.DataFrame: DataFrame contenant les publications trouvées
     """
     
-    # STEP 1: SEPARATE ID EXTRACTION
+    # STEP 1: ID EXTRACTION - prioritize title, fallback to nom/prenom
     
-    author_id = extract_author_id_simple(nom, prenom, threshold)
+    if title and title.strip():
+        author_id = extract_author_id_simple(title, nom, prenom, threshold)
+        search_term = title.strip()
+    elif nom and prenom:
+        author_id = extract_author_id_simple(f"{prenom} {nom}", nom, prenom, threshold)
+        search_term = f"{prenom} {nom}"
+    else:
+        print("Either title or nom/prenom must be provided.")
+        return pd.DataFrame()
     
     # STEP 2: DOUBLE QUERY FOR PUBLICATIONS
     
-    # Build base queries for both name orders
-    name_variants = [f"{prenom} {nom}", f"{nom} {prenom}"]
+    # Build base queries - primary with title/search_term, secondary with name variants
     query_urls = []
     
-    for name in name_variants:
-        query_url = f'https://api.archives-ouvertes.fr/search/?q=authFullName_t:"{name}"'
-        
-        if period:
-            try:
-                start_year, end_year = period.split("-")
-                query_url += f"&fq=publicationDateY_i:[{start_year} TO {end_year}]"
-            except ValueError:
-                print("Period format must be YYYY-YYYY.")
-                return pd.DataFrame()
+    # Primary query with main search term
+    query_url = f'https://api.archives-ouvertes.fr/search/?q=authFullName_t:"{search_term}"'
+    
+    if period:
+        try:
+            start_year, end_year = period.split("-")
+            query_url += f"&fq=publicationDateY_i:[{start_year} TO {end_year}]"
+        except ValueError:
+            print("Period format must be YYYY-YYYY.")
+            return pd.DataFrame()
 
-        if domain_filter:
-            domain_codes = [get_domain_code(d) for d in domain_filter if get_domain_code(d)]
-            if domain_codes:
-                query_url += f"&fq=domain_s:({' OR '.join(domain_codes)})"
+    if domain_filter:
+        domain_codes = [get_domain_code(d) for d in domain_filter if get_domain_code(d)]
+        if domain_codes:
+            query_url += f"&fq=domain_s:({' OR '.join(domain_codes)})"
 
-        if type_filter:
-            type_codes = [get_type_code(t) for t in type_filter if get_type_code(t)]
-            if type_codes:
-                # Use enhanced linking function
-                linked_type_codes = get_linked_types(type_codes)
-                query_url += f"&fq=docType_s:({' OR '.join(linked_type_codes)})"
+    if type_filter:
+        type_codes = [get_type_code(t) for t in type_filter if get_type_code(t)]
+        if type_codes:
+            # Use enhanced linking function
+            linked_type_codes = get_linked_types(type_codes)
+            query_url += f"&fq=docType_s:({' OR '.join(linked_type_codes)})"
 
-        # Fields for publications
-        query_url += "&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s,docid,title_s,publicationDateY_i,docType_s,domain_s,keyword_s,labStructName_s&wt=json&rows=100"
-        
-        query_urls.append(query_url)
+    # Fields for publications
+    query_url += "&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s,docid,title_s,publicationDateY_i,docType_s,domain_s,keyword_s,labStructName_s&wt=json&rows=100"
+    
+    query_urls.append(query_url)
+    
+    # Secondary query with inverted name order (if we have nom/prenom)
+    if nom and prenom:
+        inverted_search = f"{nom} {prenom}"
+        if inverted_search != search_term:  # Avoid duplicate queries
+            query_url2 = f'https://api.archives-ouvertes.fr/search/?q=authFullName_t:"{inverted_search}"'
+            
+            if period:
+                try:
+                    start_year, end_year = period.split("-")
+                    query_url2 += f"&fq=publicationDateY_i:[{start_year} TO {end_year}]"
+                except ValueError:
+                    pass
+
+            if domain_filter:
+                domain_codes = [get_domain_code(d) for d in domain_filter if get_domain_code(d)]
+                if domain_codes:
+                    query_url2 += f"&fq=domain_s:({' OR '.join(domain_codes)})"
+
+            if type_filter:
+                type_codes = [get_type_code(t) for t in type_filter if get_type_code(t)]
+                if type_codes:
+                    linked_type_codes = get_linked_types(type_codes)
+                    query_url2 += f"&fq=docType_s:({' OR '.join(linked_type_codes)})"
+
+            query_url2 += "&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s,docid,title_s,publicationDateY_i,docType_s,domain_s,keyword_s,labStructName_s&wt=json&rows=100"
+            query_urls.append(query_url2)
     
     # STEP 3: EXECUTE BOTH QUERIES AND MERGE
     
@@ -552,28 +647,50 @@ def get_hal_data(nom, prenom, period=None, domain_filter=None, type_filter=None,
         for full_name in auth_full_names:
             if not full_name:
                 continue
-                
-            # Separate first name/last name from authFullName_s
-            name_parts = full_name.split()
-            if len(name_parts) >= 2:
-                # Try both interpretations
-                # Interpretation 1: First word = first name, rest = last name
-                prenom_hal_1 = name_parts[0]
-                nom_hal_1 = " ".join(name_parts[1:])
-                
-                # Interpretation 2: Last word = first name, rest = last name  
-                prenom_hal_2 = name_parts[-1]
-                nom_hal_2 = " ".join(name_parts[:-1])
-                
-                # Test both interpretations
-                match_1 = is_same_author_levenshtein(nom, prenom, nom_hal_1, prenom_hal_1, threshold)
-                match_2 = is_same_author_levenshtein(nom, prenom, nom_hal_2, prenom_hal_2, threshold)
-                
-                if match_1 or match_2:
+            
+            # Primary matching: use title if available
+            if title and title.strip():
+                if is_same_author_levenshtein(title.strip(), full_name, threshold):
                     publication_match_found = True
-                    break  # One author matches, keep this publication
-            else:
-                continue
+                    break
+            
+            # Secondary matching: try with name components
+            if not publication_match_found:
+                # Separate first name/last name from authFullName_s
+                name_parts = full_name.split()
+                if len(name_parts) >= 2:
+                    # Try both interpretations
+                    # Interpretation 1: First word = first name, rest = last name
+                    prenom_hal_1 = name_parts[0]
+                    nom_hal_1 = " ".join(name_parts[1:])
+                    
+                    # Interpretation 2: Last word = first name, rest = last name  
+                    prenom_hal_2 = name_parts[-1]
+                    nom_hal_2 = " ".join(name_parts[:-1])
+                    
+                    # Test both interpretations with our search terms
+                    if nom and prenom:
+                        # Traditional name matching
+                        match_1 = (levenshtein_distance(nom.lower(), nom_hal_1.lower()) <= threshold and 
+                                 levenshtein_distance(prenom.lower(), prenom_hal_1.lower()) <= threshold)
+                        match_2 = (levenshtein_distance(nom.lower(), nom_hal_2.lower()) <= threshold and 
+                                 levenshtein_distance(prenom.lower(), prenom_hal_2.lower()) <= threshold)
+                        
+                        # Also try inverted matching  
+                        match_3 = (levenshtein_distance(nom.lower(), prenom_hal_1.lower()) <= threshold and 
+                                 levenshtein_distance(prenom.lower(), nom_hal_1.lower()) <= threshold)
+                        match_4 = (levenshtein_distance(nom.lower(), prenom_hal_2.lower()) <= threshold and 
+                                 levenshtein_distance(prenom.lower(), nom_hal_2.lower()) <= threshold)
+                        
+                        if match_1 or match_2 or match_3 or match_4:
+                            publication_match_found = True
+                            break
+                    
+                    # If no traditional name match, try with search_term as full name
+                    if not publication_match_found:
+                        if is_same_author_levenshtein(search_term, full_name, threshold):
+                            publication_match_found = True
+                            break
         
         # If a match was found for this publication, add it
         if publication_match_found:
@@ -583,7 +700,8 @@ def get_hal_data(nom, prenom, period=None, domain_filter=None, type_filter=None,
             scientist_data.append({
                 "Nom": nom,  
                 "Prenom": prenom,  
-                "IdHAL de l'Auteur": author_id,  # ID EXTRACTED SEPARATELY
+                "Title": title if title else f"{prenom} {nom}",  # Add title to output
+                "IdHAL de l'Auteur": author_id,  # ID EXTRACTED USING TITLE OR NAME
                 "IdHAL des auteurs de la publication": authors_sorted,
                 "Titre": pub.get("title_s", "Titre non disponible"),
                 "Docid": pub.get("docid", "Id non disponible"),
@@ -595,3 +713,50 @@ def get_hal_data(nom, prenom, period=None, domain_filter=None, type_filter=None,
             })
     
     return pd.DataFrame(scientist_data)
+
+def get_all_id(scientists_df, threshold=DEFAULT_THRESHOLD):
+    """
+    Extract HAL identifiers for all scientists in the DataFrame
+    
+    Args:
+        scientists_df (pd.DataFrame): DataFrame containing scientist data with columns:
+                                    - 'title' (preferred) or 'nom'/'prenom'
+                                    - 'nom': last name
+                                    - 'prenom': first name
+                                    - other columns will be preserved
+        threshold (int): Levenshtein distance threshold for matching
+    
+    Returns:
+        pd.DataFrame: DataFrame with original data plus 'IdHAL' column
+    """
+    # Create a copy of the input DataFrame to preserve original data
+    result_df = scientists_df.copy()
+    
+    # Initialize the IdHAL column
+    result_df['IdHAL'] = ''
+    
+    # Extract identifiers for each scientist
+    for index, row in scientists_df.iterrows():
+        try:
+            # Get title if available, otherwise use nom/prenom
+            title = row.get('title', '').strip() if 'title' in row else ''
+            nom = row.get('nom', '').strip() if 'nom' in row else ''
+            prenom = row.get('prenom', '').strip() if 'prenom' in row else ''
+            
+            # Extract HAL identifier
+            hal_id = extract_author_id_simple(
+                title=title if title else None,
+                nom=nom if nom else None,
+                prenom=prenom if prenom else None,
+                threshold=threshold
+            )
+            
+            # Store the result
+            result_df.at[index, 'IdHAL'] = hal_id
+            
+        except Exception as e:
+            # In case of error, mark as unavailable
+            result_df.at[index, 'IdHAL'] = "Id non disponible"
+            print(f"Erreur lors de l'extraction de l'ID pour la ligne {index}: {str(e)}")
+    
+    return result_df
