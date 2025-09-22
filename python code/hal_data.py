@@ -106,9 +106,11 @@ def extract_author_id_simple(title, nom=None, prenom=None, threshold=2):
     # STEP 1: TRY STANDARD FORMAT 'prenom-nom'
     
     # Construct standard ID format: prenom-nom (lowercase, with hyphens)
-    standard_id = f"{prenom_search.lower()}-{nom_search.lower()}"
+    standard_id = [f"{prenom_search.lower()}-{nom_search.lower()}", f"{prenom_search.lower()}{nom_search.lower()}"]
     # Clean the constructed ID (remove spaces, special chars)
-    standard_id_clean = standard_id.replace(" ", "-").replace("'", "").replace(".", "")
+    standard_id_clean=[]
+    for st_id in standard_id:
+        standard_id_clean.append(st_id.replace(" ", "-").replace("'", "").replace(".", ""))
     
     # Test on both APIs with the constructed ID
     base_apis = [
@@ -117,20 +119,22 @@ def extract_author_id_simple(title, nom=None, prenom=None, threshold=2):
     ]
     
     for base_api in base_apis:
-        query_url = f'{base_api}?q=authIdHal_s:"{standard_id_clean}"&wt=json&rows=1'
+        for st_id in standard_id_clean:
+            query_url = f'{base_api}?q=authIdHal_s:"{st_id}"&wt=json&rows=1'
+            print ("Query", query_url)
         
-        try:
-            response = requests.get(query_url)
-            if response.status_code == 200:
-                data = response.json()
-                num_found = data.get("response", {}).get("numFound", 0)
+            try:
+                response = requests.get(query_url)
+                if response.status_code == 200:
+                    data = response.json()
+                    num_found = data.get("response", {}).get("numFound", 0)
                 
-                # If we found at least one document, the ID exists
-                if num_found >= 1:
-                    return standard_id_clean
+                    # If we found at least one document, the ID exists
+                    if num_foun >= 1:
+                        return st_id
                     
-        except Exception:
-            continue
+            except Exception:
+                continue
     
     # Search for publications containing the author to get all possible IDs
     all_candidate_ids = set()
@@ -141,12 +145,12 @@ def extract_author_id_simple(title, nom=None, prenom=None, threshold=2):
         f'authFullName_t:"{title_clean}"',
         f'authFullName_s:"{prenom_search} {nom_search}"',
         f'authFullName_t:"{prenom_search} {nom_search}"',
-        f'authFirstName_s:"{prenom_search}" AND authLastName_s:"{nom_search}"'
+        #f'authFirstName_s:"{prenom_search}" AND authLastName_s:"{nom_search}"'
     ]
     
     for base_api in base_apis:
         for query in query_strategies:
-            query_url = f'{base_api}?q={query}&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json&rows=100'
+            query_url = f'{base_api}?q={query}&fl=authIdHal_s,authFirstName_s,authLastName_s,authFullName_s&wt=json'
             
             try:
                 response = requests.get(query_url)
