@@ -5,7 +5,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 import argparse
-from hal_data import get_hal_data
+from hal_data import get_hal_data, extract_author_id_simple
 from utils import generate_filename
 from mapping import list_domains, list_types
 from config import get_threshold_from_level, list_sensitivity_levels, DEFAULT_THRESHOLD
@@ -48,7 +48,7 @@ def create_progress_bar(current, total, description="Progress", bar_length=50):
     filled_length = int(bar_length * progress)
     
     try:
-        bar = '█' * filled_length + '░' * (bar_length - filled_length)
+        bar = '█' * filled_length + '▒' * (bar_length - filled_length)
     except UnicodeEncodeError:
         bar = '#' * filled_length + '-' * (bar_length - filled_length)
     
@@ -124,8 +124,12 @@ def get_user_selected_csv():
         exit(1)
 
 def create_extraction_folder():
-    """Create extraction folder for output files"""
+    """
+    Create extraction folder for output files
     
+    Returns:
+        str: Path to extraction directory
+    """
     current_directory = os.path.dirname(os.path.abspath(__file__))
     extraction_directory = os.path.join(current_directory, "extraction")
 
@@ -134,127 +138,113 @@ def create_extraction_folder():
 
     return extraction_directory
 
-def fetch_data(row):
-    """Wrapper function for parallel data extraction with type handling"""
-    
-    # Pass type as list for proper handling in get_hal_data
-    type_filter = [args.type] if args.type else None
-    domain_filter = [args.domain] if args.domain else None
-    
-    return get_hal_data(
-        row["nom"], row["prenom"], 
-        period=args.year, 
-        domain_filter=domain_filter, 
-        type_filter=type_filter,
-        threshold=args.threshold
-    )
-
-def display_extraction_summary():
+def extract_hal_ids_step1(scientists_df, threshold=DEFAULT_THRESHOLD):
     """
-    Displays a summary of the extraction with detailed thesis information
+    STEP 1: Extract HAL identifiers for all scientists in the DataFrame
+    Creates a new CSV file with IdHAL column added
     
-    Shows filters, sensitivity settings, and output options in a formatted way
+    Args:
+        scientists_df (pd.DataFrame): DataFrame containing scientist data with nom/prenom
+        threshold (int): Threshold for name matching sensitivity
+        
+    Returns:
+        str: Path to the created CSV file with IdHAL column
     """
     print("\n" + "="*60)
-    print("EXTRACTION SUMMARY")
+    print("STEP 1: HAL IDENTIFIER EXTRACTION")
     print("="*60)
+    print(f"Processing {len(scientists_df)} authors...")
     
-    filters = []
-    if args.year:
-        filters.append(f"period: {args.year}")
-    if args.type:
-        filters.append(f"type: {args.type}")
-    if args.domain:
-        filters.append(f"domain: {args.domain}")
+    init_progress_bar()
     
-    if filters:
-        filter_text = "with filters (" + ", ".join(filters) + ")"
-    else:
-        filter_text = "all data (no filters)"
+    result_df = scientists_df.copy()
+    result_df['IdHAL'] = ''
     
-    outputs = []
-    if args.graphs:
-        outputs.append("graph generation")
-    if args.reportpdf:
-        outputs.append("PDF report")
-    if args.reportlatex:
-        outputs.append("LaTeX report")
+    total_scientists = len(scientists_df)
+    completed = 0
     
-    if outputs:
-        output_text = ", ".join(outputs)
-    else:
-        output_text = "no additional output"
-    
-    sensitivity_levels = {
-        0: "very strict",
-        1: "strict", 
-        2: "moderate",
-        3: "permissive",
-        4: "very permissive"
-    }
-    sensitivity_text = f"sensitivity {sensitivity_levels.get(args.threshold, 'unknown')} (distance = {args.threshold})"
-    
-    print(f"• Extraction: {filter_text}")
-    print(f"• Matching: {sensitivity_text}")
-    print(f"• Outputs: {output_text}")
-    
-    # Detailed thesis information
-    if args.type:
-        type_lower = args.type.lower()
-        if any(keyword in type_lower for keyword in ['thèse', 'habilitation', 'thesis', 'hdr']):
-            print(f"• Extended search: Double query (prenom nom + nom prenom) for better results")
+    with ThreadPoolExecutor(max_workers=100) as executor:
+        future_to_index = {
+            executor.submit(
+                extract_author_id_simple, 
+                row.get('title', ''), 
+                row.get('nom', ''), 
+                row.get('prenom', ''),
+                threshold=threshold
+            ): index 
+            for index, row in scientists_df.iterrows()
+        }
         
-        # Specific information for thesis types
-        if 'doctorant' in type_lower:
-            print(f"• Thesis filter: PhD theses only (THESE documents)")
-        elif 'hdr' in type_lower and 'thèse' in type_lower:
-            print(f"• Thesis filter: HDR theses only (HDR documents)")
-        elif 'thèse' in type_lower or 'habilitation' in type_lower:
-            print(f"• Thesis filter: Both PhD and HDR theses (THESE + HDR documents)")
+        for future in as_completed(future_to_index):
+            index = future_to_index[future]
+            try:
+                hal_id = future.result()
+                result_df.at[index, 'IdHAL'] = hal_id
+            except Exception as e:
+                result_df.at[index, 'IdHAL'] = " "
+                print(f"\nError for index {index}: {str(e)}")
+            
+            completed += 1
+            create_progress_bar(completed, total_scientists, "Extracting HAL IDs")
     
-    print("="*60 + "\n")
+    extraction_directory = create_extraction_folder()
+    timestamp = int(time.time())
+    filename = f"step1_hal_identifiers_{timestamp}.csv"
+    output_path = os.path.join(extraction_directory, filename)
+    
+    result_df.to_csv(output_path, index=False, encoding='utf-8-sig')
+    
+    found_ids = len(result_df[result_df['IdHAL'].str.strip() != ''])
+    success_rate = (found_ids / total_scientists) * 100 if total_scientists > 0 else 0
+    
+    print(f"\n\nStep 1 completed!")
+    print(f"  • Total authors processed: {total_scientists}")
+    print(f"  • HAL identifiers found: {found_ids}")
+    print(f"  • Success rate: {success_rate:.1f}%")
+    print(f"  • File saved: {output_path}")
+    
+    return output_path
 
 def list_extraction_csv_files():
     """
-    Liste les fichiers CSV disponibles dans le dossier extraction
+    Lists available CSV files in the extraction directory
     
     Returns:
         tuple: (extraction_directory_path, list_of_csv_files)
         
     Raises:
-        FileNotFoundError: Si le dossier extraction ou les fichiers CSV ne sont pas trouvés
+        FileNotFoundError: If extraction directory or CSV files are not found
     """
     current_directory = os.path.dirname(os.path.abspath(__file__))
     extraction_directory = os.path.join(current_directory, "extraction")
     
     if not os.path.exists(extraction_directory):
-        raise FileNotFoundError(f"Le dossier 'extraction' n'existe pas dans {current_directory}")
+        raise FileNotFoundError(f"The 'extraction' folder does not exist in {current_directory}")
 
     csv_files = [f for f in os.listdir(extraction_directory) if f.endswith(".csv")]
     if not csv_files:
-        raise FileNotFoundError(f"Aucun fichier CSV trouvé dans le dossier 'extraction'")
+        raise FileNotFoundError(f"No CSV files found in 'extraction' folder")
     
     return extraction_directory, csv_files
 
 def select_extraction_csv():
     """
-    Interactive selection of a CSV file from the extraction directory.
-
-    Returns:
-    str: Full path to the selected CSV file
+    Interactive selection of a CSV file from the extraction directory
     
+    Returns:
+        str: Full path to the selected CSV file
+        
     Raises:
-    SystemExit: If invalid choice or incorrect input
+        SystemExit: If invalid choice or incorrect input
     """
     try:
         extraction_directory, csv_files = list_extraction_csv_files()
         
         print("\n" + "="*60)
-        print("FICHIERS CSV DISPONIBLES DANS 'extraction/'")
+        print("AVAILABLE CSV FILES IN 'extraction/' FOLDER")
         print("="*60)
         
         for i, file in enumerate(csv_files, start=1):
-            # Afficher des informations sur le fichier
             file_path = os.path.join(extraction_directory, file)
             file_size = os.path.getsize(file_path)
             size_mb = file_size / (1024 * 1024)
@@ -262,89 +252,238 @@ def select_extraction_csv():
             print(f"{i:2d}. {file:<40} ({size_mb:.1f} MB)")
 
         print("="*60)
-        choice = int(input(f"\nSélectionnez un fichier (1-{len(csv_files)}): "))
+        choice = int(input(f"\nSelect a file (1-{len(csv_files)}): "))
         
         if 1 <= choice <= len(csv_files):
             selected_file = os.path.join(extraction_directory, csv_files[choice - 1])
-            print(f"Fichier sélectionné: {csv_files[choice - 1]}")
+            print(f"Selected file: {csv_files[choice - 1]}")
             return selected_file
         else:
-            print("Choix invalide. Veuillez relancer le programme.")
+            print("Invalid choice. Please restart the program.")
             exit(1)
             
     except ValueError:
-        print("Entrée invalide. Veuillez entrer un nombre.")
+        print("Invalid input. Please enter a number.")
         exit(1)
     except FileNotFoundError as e:
         print(f"{e}")
         exit(1)
 
-def analyze_csv_cli():
+def fetch_data_with_idhal(row, period, domain_filter, type_filter, threshold):
     """
-    Command line interface for CSV file analysis 
+    Wrapper function for parallel data extraction with IdHAL support
+    Uses HAL identifier if available, falls back to full name otherwise
+    
+    Args:
+        row: DataFrame row containing author information
+        period: Time period filter
+        domain_filter: List of domains to filter
+        type_filter: List of document types to filter
+        threshold: Name matching sensitivity threshold
+        
+    Returns:
+        pd.DataFrame: Extracted publications for this author
+    """
+    nom = row.get("nom", "")
+    prenom = row.get("prenom", "")
+    title = row.get("title", "")
+    author_id = row.get("IdHAL", "")
+    
+    return get_hal_data(
+        nom=nom,
+        prenom=prenom,
+        title=title if title else None,
+        author_id=author_id if author_id and str(author_id).strip() and author_id != " " else None,
+        period=period, 
+        domain_filter=domain_filter, 
+        type_filter=type_filter,
+        threshold=threshold
+    )
+
+def extract_publications_step2(scientists_df, period=None, domain_filter=None, type_filter=None, threshold=DEFAULT_THRESHOLD):
+    """
+    STEP 2: Extract publications using CSV file with IdHAL column
+    Uses HAL identifiers when available for optimal extraction
+    
+    Args:
+        scientists_df (pd.DataFrame): DataFrame with IdHAL column
+        period (str): Time period filter (format: YYYY-YYYY)
+        domain_filter (str): Domain to filter
+        type_filter (str): Document type to filter
+        threshold (int): Name matching sensitivity threshold
+        
+    Returns:
+        str: Path to the extraction results file
     """
     print("\n" + "="*60)
-    print("ANALYSE DES DOUBLONS & HOMONYMES")
-    print("="*60)
-    print("Méthode basée sur authIdPerson_i de l'API HAL")
+    print("STEP 2: PUBLICATION EXTRACTION")
     print("="*60)
     
-    # Select file to analyze
+    has_idhal = 'IdHAL' in scientists_df.columns
+    has_title = 'title' in scientists_df.columns
+    
+    if has_idhal:
+        idhal_count = len(scientists_df[scientists_df['IdHAL'].str.strip() != ''])
+        print(f"Extraction method: HAL identifier-based (optimal)")
+        print(f"  • {idhal_count} authors with HAL identifiers")
+        print(f"  • {len(scientists_df) - idhal_count} authors will use fallback method")
+    elif has_title:
+        print(f"Extraction method: Full name-based (standard)")
+    else:
+        print(f"Extraction method: nom/prenom-based (basic)")
+    
+    filters_applied = []
+    if period:
+        filters_applied.append(f"period: {period}")
+    if type_filter:
+        filters_applied.append(f"type: {type_filter}")
+    if domain_filter:
+        filters_applied.append(f"domain: {domain_filter}")
+    
+    if filters_applied:
+        print(f"Filters: {', '.join(filters_applied)}")
+    else:
+        print(f"Filters: none (full extraction)")
+    
+    print(f"Processing {len(scientists_df)} authors...")
+    
+    init_progress_bar()
+    
+    results = []
+    total_tasks = len(scientists_df)
+    completed_tasks = 0
+    
+    domain_list = [domain_filter] if domain_filter else None
+    type_list = [type_filter] if type_filter else None
+    
+    with ThreadPoolExecutor(max_workers=100) as executor:
+        future_to_row = {
+            executor.submit(
+                fetch_data_with_idhal, 
+                row, 
+                period, 
+                domain_list, 
+                type_list, 
+                threshold
+            ): row 
+            for index, row in scientists_df.iterrows()
+        }
+
+        for future in as_completed(future_to_row):
+            results.append(future.result())
+            completed_tasks += 1
+            create_progress_bar(completed_tasks, total_tasks, "Extracting publications")
+
+    all_results = pd.concat(results, ignore_index=True)
+
+    extraction_directory = create_extraction_folder()
+    filename = generate_filename(period, domain_filter, type_filter)
+    output_path = os.path.join(extraction_directory, filename)
+    all_results.to_csv(output_path, index=False, encoding='utf-8-sig')
+    
+    print(f"\n\nStep 2 completed!")
+    print(f"  • Publications found: {len(all_results)}")
+    print(f"  • File saved: {output_path}")
+    
+    if not all_results.empty and 'Type de Document' in all_results.columns:
+        type_counts = all_results['Type de Document'].value_counts()
+        print(f"\nDocument types distribution:")
+        for doc_type, count in type_counts.head(5).items():
+            print(f"  • {doc_type}: {count}")
+    
+    return output_path
+
+def display_workflow_menu():
+    """
+    Display the two-step workflow menu
+    
+    Returns:
+        int: User's choice (1 or 2)
+    """
+    print("\n" + "="*60)
+    print("HAL DATA EXTRACTION - TWO-STEP WORKFLOW")
+    print("="*60)
+    print("\nPlease choose your starting point:")
+    print("\n1. STEP 1: Extract HAL identifiers")
+    print("   - Start with a CSV file containing 'nom' and 'prenom'")
+    print("   - Extracts HAL identifiers for all authors")
+    print("   - Creates a new CSV with 'IdHAL' column added")
+    print("\n2. STEP 2: Extract publications")
+    print("   - Start with a CSV file containing 'IdHAL' column")
+    print("   - Uses HAL identifiers for optimal extraction")
+    print("   - Can apply filters (period, domain, type)")
+    print("\n" + "="*60)
+    
+    while True:
+        try:
+            choice = int(input("\nEnter your choice (1 or 2): "))
+            if choice in [1, 2]:
+                return choice
+            else:
+                print("Invalid choice. Please enter 1 or 2.")
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+def analyze_csv_cli():
+    """
+    Command line interface for CSV file analysis with duplicate/homonym detection
+    """
+    print("\n" + "="*60)
+    print("DUPLICATE & HOMONYM DETECTION ANALYSIS")
+    print("="*60)
+    print("Method based on authIdPerson_i from HAL API")
+    print("="*60)
+    
     analysis_file = select_extraction_csv()
     
-    # Ask for laboratory file (optional)
-    print(f"\nFichier laboratoire (optionnel):")
-    print("Un fichier avec colonnes 'nom', 'prenom', 'unite_de_recherche'")
-    print("améliore la détection des homonymes.")
+    print(f"\nLaboratory file (optional):")
+    print("A file with 'nom', 'prenom', 'unite_de_recherche' columns")
+    print("improves homonym detection accuracy.")
     
-    use_lab_file = input("Utiliser un fichier laboratoire ? (o/n): ").lower()
+    use_lab_file = input("Use a laboratory file? (y/n): ").lower()
     laboratory_file = None
     
-    if use_lab_file in ['o', 'oui', 'y', 'yes']:
+    if use_lab_file in ['y', 'yes']:
         try:
             lab_files = [f for f in os.listdir('.') if f.endswith('.csv')]
             if lab_files:
-                print("\nFichiers CSV disponibles:")
+                print("\nAvailable CSV files:")
                 for i, file in enumerate(lab_files, 1):
                     print(f"{i}. {file}")
                 
-                choice = int(input("Choisissez un fichier (numéro): "))
+                choice = int(input("Choose a file (number): "))
                 if 1 <= choice <= len(lab_files):
                     laboratory_file = lab_files[choice - 1]
-                    print(f"Fichier laboratoire sélectionné: {laboratory_file}")
+                    print(f"Laboratory file selected: {laboratory_file}")
             else:
-                print("Aucun fichier CSV trouvé dans le répertoire courant.")
+                print("No CSV files found in current directory.")
         except (ValueError, IndexError):
-            print("Choix invalide. Analyse sans fichier laboratoire.")
+            print("Invalid choice. Analysis without laboratory file.")
     
-    print(f"\nAnalyse du fichier: {os.path.basename(analysis_file)}")
+    print(f"\nAnalyzing file: {os.path.basename(analysis_file)}")
     if laboratory_file:
-        print(f"Fichier laboratoire: {laboratory_file}")
+        print(f"Laboratory file: {laboratory_file}")
     
-    print("\nAnalyse en cours... (interrogation API HAL)")
+    print("\nAnalysis in progress... (querying HAL API)")
     
     try:
-        # Create detector and launch analysis
         detector = DuplicateHomonymDetector()
         results = detector.analyze_csv_file(analysis_file, laboratory_file)
         
-        # Display detailed results
         detector.display_results(results)
         
-        # Save results
         base_name = os.path.splitext(os.path.basename(analysis_file))[0]
         results_file = f'detection_results_{base_name}.json'
         
         with open(results_file, 'w', encoding='utf-8') as f:
             json.dump(results, f, indent=2, ensure_ascii=False, default=str)
         
-        print(f"\nRésultats sauvegardés dans: {results_file}")
+        print(f"\nResults saved in: {results_file}")
         
-        # Propose actions
         propose_actions(results, analysis_file)
         
     except Exception as e:
-        print(f"\nERREUR lors de l'analyse: {str(e)}")
+        print(f"\nERROR during analysis: {str(e)}")
 
 def propose_actions(results, analysis_file):
     """
@@ -355,17 +494,17 @@ def propose_actions(results, analysis_file):
         analysis_file: Path to the analyzed file
     """
     print(f"\n" + "="*60)
-    print("ACTIONS DISPONIBLES")
+    print("AVAILABLE ACTIONS")
     print("="*60)
     
-    print("1. Traiter automatiquement les données")
-    print("2. Exporter les résultats détaillés")
-    print("3. Afficher plus de détails")
-    print("4. Terminer")
+    print("1. Automatically process data")
+    print("2. Export detailed results")
+    print("3. Display more details")
+    print("4. Exit")
     
     while True:
         try:
-            choice = int(input(f"\nChoisissez une action (1-4): "))
+            choice = int(input(f"\nChoose an action (1-4): "))
             
             if choice == 1:
                 treat_data_cli(results, analysis_file)
@@ -375,127 +514,121 @@ def propose_actions(results, analysis_file):
                 break
             elif choice == 3:
                 display_detailed_results(results)
-                # After display, propose actions again
                 continue
             elif choice == 4:
-                print("Analyse terminée.")
+                print("Analysis completed.")
                 break
             else:
-                print("Choix invalide. Veuillez choisir entre 1 et 4.")
+                print("Invalid choice. Please choose between 1 and 4.")
                 
         except ValueError:
-            print("Entrée invalide. Veuillez entrer un nombre.")
+            print("Invalid input. Please enter a number.")
 
 def treat_data_cli(results, analysis_file):
     """
-    Automatically processes problematic data with the new method
+    Automatically processes problematic data
     
     Args:
         results: Dictionary containing analysis results
         analysis_file: Path to the analyzed file
     """
     print(f"\n" + "="*50)
-    print("TRAITEMENT AUTOMATIQUE DES DONNÉES")
+    print("AUTOMATIC DATA PROCESSING")
     print("="*50)
     
     summary = results['summary']
     
-    print(f"Impact du traitement:")
-    print(f"   • Doublons à supprimer: {summary['duplicate_publications']} cas")
-    print(f"   • Homonymes détectés: {summary['homonym_publications']} cas")
-    print(f"   • Collaborations: {len(results['collaborator_cases'])} cas")
-    print(f"   • Multi-thèses: {summary['multi_thesis_publications']} cas")
+    print(f"Processing impact:")
+    print(f"   • Duplicates to remove: {summary['duplicate_publications']} cases")
+    print(f"   • Homonyms detected: {summary['homonym_publications']} cases")
+    print(f"   • Collaborations: {len(results['collaborator_cases'])} cases")
+    print(f"   • Multi-theses: {summary['multi_thesis_publications']} cases")
     
-    # Treatment options
-    print(f"\nOptions de traitement:")
-    print(f"1. Supprimer les doublons uniquement")
-    print(f"2. Supprimer doublons + collaborations")
-    print(f"3. Traitement complet (nettoyage maximal)")
-    print(f"4. Traitement personnalisé")
+    print(f"\nProcessing options:")
+    print(f"1. Remove duplicates only")
+    print(f"2. Remove duplicates + collaborations")
+    print(f"3. Complete processing (maximum cleaning)")
+    print(f"4. Custom processing")
     
     try:
-        choice = int(input(f"\nChoisissez le type de traitement (1-4): "))
+        choice = int(input(f"\nChoose processing type (1-4): "))
         
-        # Load original data
         original_df = pd.read_csv(analysis_file)
         processed_df = original_df.copy()
         
         actions_performed = []
         indices_to_remove = set()
         
-        if choice == 1 or choice == 2 or choice == 3:  # Remove duplicates
+        if choice == 1 or choice == 2 or choice == 3:
             if results['duplicate_cases']:
                 for case in results['duplicate_cases']:
                     indices_to_remove.add(case['publication2']['index'])
                 
-                actions_performed.append(f"Supprimé {len(results['duplicate_cases'])} doublons")
+                actions_performed.append(f"Removed {len(results['duplicate_cases'])} duplicates")
         
-        if choice == 2 or choice == 3:  # Remove collaborations
+        if choice == 2 or choice == 3:
             if results['collaborator_cases']:
                 for case in results['collaborator_cases']:
                     collab_data = case['collaboration']['row_data']
                     if hasattr(collab_data, 'name'):
                         indices_to_remove.add(collab_data.name)
                 
-                actions_performed.append(f"Supprimé {len(results['collaborator_cases'])} collaborations")
+                actions_performed.append(f"Removed {len(results['collaborator_cases'])} collaborations")
         
-        if choice == 4:  # Custom treatment
-            print(f"\nTraitement personnalisé:")
+        if choice == 4:
+            print(f"\nCustom processing:")
             
             if results['duplicate_cases']:
-                remove_dup = input("Supprimer les doublons ? (o/n): ").lower()
-                if remove_dup in ['o', 'oui', 'y', 'yes']:
+                remove_dup = input("Remove duplicates? (y/n): ").lower()
+                if remove_dup in ['y', 'yes']:
                     for case in results['duplicate_cases']:
                         indices_to_remove.add(case['publication2']['index'])
-                    actions_performed.append(f"Supprimé {len(results['duplicate_cases'])} doublons")
+                    actions_performed.append(f"Removed {len(results['duplicate_cases'])} duplicates")
             
             if results['collaborator_cases']:
-                remove_collab = input("Supprimer les collaborations ? (o/n): ").lower()
-                if remove_collab in ['o', 'oui', 'y', 'yes']:
+                remove_collab = input("Remove collaborations? (y/n): ").lower()
+                if remove_collab in ['y', 'yes']:
                     for case in results['collaborator_cases']:
                         collab_data = case['collaboration']['row_data']
                         if hasattr(collab_data, 'name'):
                             indices_to_remove.add(collab_data.name)
-                    actions_performed.append(f"Supprimé {len(results['collaborator_cases'])} collaborations")
+                    actions_performed.append(f"Removed {len(results['collaborator_cases'])} collaborations")
         
-        # Remove marked indices
         if indices_to_remove:
             processed_df = processed_df.drop(indices_to_remove).reset_index(drop=True)
         
-        # Save processed file
         base_name = os.path.splitext(os.path.basename(analysis_file))[0]
-        processed_filename = f"{base_name}_nettoye.csv"
+        processed_filename = f"{base_name}_cleaned.csv"
         processed_path = os.path.join('extraction', processed_filename)
         
-        processed_df.to_csv(processed_path, index=False)
+        processed_df.to_csv(processed_path, index=False, encoding='utf-8-sig')
         
-        # Display summary
-        print(f"\nTRAITEMENT TERMINÉ")
-        print(f"Publications originales: {len(original_df)}")
-        print(f"Publications traitées: {len(processed_df)}")
-        print(f"Publications supprimées: {len(original_df) - len(processed_df)}")
-        print(f"Fichier sauvegardé: {processed_path}")
+        print(f"\nPROCESSING COMPLETED")
+        print(f"Original publications: {len(original_df)}")
+        print(f"Processed publications: {len(processed_df)}")
+        print(f"Removed publications: {len(original_df) - len(processed_df)}")
+        print(f"File saved: {processed_path}")
         
         if actions_performed:
-            print(f"\nActions effectuées:")
+            print(f"\nActions performed:")
             for action in actions_performed:
                 print(f"   • {action}")
         
     except ValueError:
-        print("Entrée invalide.")
+        print("Invalid input.")
     except Exception as e:
-        print(f"Erreur lors du traitement: {str(e)}")
+        print(f"Error during processing: {str(e)}")
 
 def export_results_cli(results, analysis_file):
     """
-    Exports detailed results
+    Exports detailed results to CSV files
     
     Args:
         results: Dictionary containing analysis results
         analysis_file: Path to the analyzed file
     """
     print(f"\n" + "="*50)
-    print("EXPORTATION DES RÉSULTATS")
+    print("RESULTS EXPORT")
     print("="*50)
     
     base_name = os.path.splitext(os.path.basename(analysis_file))[0]
@@ -504,130 +637,124 @@ def export_results_cli(results, analysis_file):
     try:
         exported_files = []
         
-        # Export duplicates
         if results['duplicate_cases']:
             dup_df = pd.DataFrame([
                 {
-                    'Auteur': case['author'],
+                    'Author': case['author'],
                     'Type': case['type'],
-                    'Titre_1': case['publication1']['title'],
-                    'Titre_2': case['publication2']['title'],
-                    'Annee_1': case['publication1']['year'],
-                    'Annee_2': case['publication2']['year'],
-                    'Similarite': case['similarity_score'],
-                    'Ecart_ans': case['year_gap'],
+                    'Title_1': case['publication1']['title'],
+                    'Title_2': case['publication2']['title'],
+                    'Year_1': case['publication1']['year'],
+                    'Year_2': case['publication2']['year'],
+                    'Similarity': case['similarity_score'],
+                    'Year_gap': case['year_gap'],
                     'Docid_1': case['publication1']['docid'],
                     'Docid_2': case['publication2']['docid']
                 }
                 for case in results['duplicate_cases']
             ])
-            dup_path = os.path.join(export_dir, f'{base_name}_doublons.csv')
-            dup_df.to_csv(dup_path, index=False)
+            dup_path = os.path.join(export_dir, f'{base_name}_duplicates.csv')
+            dup_df.to_csv(dup_path, index=False, encoding='utf-8-sig')
             exported_files.append(dup_path)
         
-        # Export homonyms
         if results['homonym_cases']:
             hom_df = pd.DataFrame([
                 {
-                    'Auteur': case['author'],
+                    'Author': case['author'],
                     'Type': case['type'],
-                    'Titre_1': case['publication1']['title'],
-                    'Titre_2': case['publication2']['title'],
-                    'Annee_1': case['publication1']['year'],
-                    'Annee_2': case['publication2']['year'],
-                    'Domaine_1': case['publication1']['domain'],
-                    'Domaine_2': case['publication2']['domain'],
-                    'Laboratoire_1': case['publication1']['lab'],
-                    'Laboratoire_2': case['publication2']['lab']
+                    'Title_1': case['publication1']['title'],
+                    'Title_2': case['publication2']['title'],
+                    'Year_1': case['publication1']['year'],
+                    'Year_2': case['publication2']['year'],
+                    'Domain_1': case['publication1']['domain'],
+                    'Domain_2': case['publication2']['domain'],
+                    'Lab_1': case['publication1']['lab'],
+                    'Lab_2': case['publication2']['lab']
                 }
                 for case in results['homonym_cases']
             ])
-            hom_path = os.path.join(export_dir, f'{base_name}_homonymes.csv')
-            hom_df.to_csv(hom_path, index=False)
+            hom_path = os.path.join(export_dir, f'{base_name}_homonyms.csv')
+            hom_df.to_csv(hom_path, index=False, encoding='utf-8-sig')
             exported_files.append(hom_path)
         
-        # Export collaborations
         if results['collaborator_cases']:
             collab_df = pd.DataFrame([
                 {
-                    'Auteur': case['author'],
+                    'Author': case['author'],
                     'Type': case['type'],
-                    'These_principale_annee': case['main_thesis']['row_data']['Année de Publication'],
-                    'These_principale_titre': case['main_thesis']['row_data']['Titre'],
-                    'Collaboration_annee': case['collaboration']['row_data']['Année de Publication'],
-                    'Collaboration_titre': case['collaboration']['row_data']['Titre']
+                    'Main_thesis_year': case['main_thesis']['row_data']['Année de Publication'],
+                    'Main_thesis_title': case['main_thesis']['row_data']['Titre'],
+                    'Collaboration_year': case['collaboration']['row_data']['Année de Publication'],
+                    'Collaboration_title': case['collaboration']['row_data']['Titre']
                 }
                 for case in results['collaborator_cases']
             ])
             collab_path = os.path.join(export_dir, f'{base_name}_collaborations.csv')
-            collab_df.to_csv(collab_path, index=False)
+            collab_df.to_csv(collab_path, index=False, encoding='utf-8-sig')
             exported_files.append(collab_path)
         
-        # Export summary
-        summary_path = os.path.join(export_dir, f'{base_name}_resume.txt')
+        summary_path = os.path.join(export_dir, f'{base_name}_summary.txt')
         with open(summary_path, 'w', encoding='utf-8') as f:
             summary = results['summary']
-            f.write("RÉSUMÉ DE L'ANALYSE\n")
+            f.write("ANALYSIS SUMMARY\n")
             f.write("="*50 + "\n\n")
-            f.write(f"Fichier analysé: {os.path.basename(analysis_file)}\n")
-            f.write(f"Date d'analyse: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-            f.write("STATISTIQUES GLOBALES:\n")
-            f.write(f"Publications totales: {summary['total_publications']}\n")
-            f.write(f"Auteurs avec publications multiples: {summary['authors_with_multiple_pubs']}\n\n")
-            f.write("DÉTECTIONS:\n")
-            f.write(f"Doublons: {summary['duplicate_publications']}\n")
-            f.write(f"Homonymes: {summary['homonym_publications']}\n")
-            f.write(f"Multi-thèses: {summary['multi_thesis_publications']}\n")
+            f.write(f"Analyzed file: {os.path.basename(analysis_file)}\n")
+            f.write(f"Analysis date: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            f.write("GLOBAL STATISTICS:\n")
+            f.write(f"Total publications: {summary['total_publications']}\n")
+            f.write(f"Authors with multiple publications: {summary['authors_with_multiple_pubs']}\n\n")
+            f.write("DETECTIONS:\n")
+            f.write(f"Duplicates: {summary['duplicate_publications']}\n")
+            f.write(f"Homonyms: {summary['homonym_publications']}\n")
+            f.write(f"Multi-theses: {summary['multi_thesis_publications']}\n")
             f.write(f"Collaborations: {len(results['collaborator_cases'])}\n")
-            f.write(f"Problèmes techniques: {len(results['no_authid_cases'])}\n\n")
-            f.write("MÉTHODE UTILISÉE:\n")
-            f.write("• Algorithme basé sur authIdPerson_i de HAL\n")
-            f.write("• Seuil de similarité des titres: 0.8\n")
-            f.write("• Seuil d'écart temporel: 2 ans\n")
-            f.write("• Détection automatique des collaborations\n")
-            f.write("• Gestion robuste des cas sans authIdPerson_i\n")
+            f.write(f"Technical issues: {len(results['no_authid_cases'])}\n\n")
+            f.write("METHOD USED:\n")
+            f.write("• Algorithm based on HAL authIdPerson_i\n")
+            f.write("• Title similarity threshold: 0.8\n")
+            f.write("• Temporal gap threshold: 2 years\n")
+            f.write("• Automatic collaboration detection\n")
+            f.write("• Robust handling of missing authIdPerson_i\n")
         
         exported_files.append(summary_path)
         
-        print(f"Résultats exportés avec succès:")
+        print(f"Results successfully exported:")
         for file_path in exported_files:
             print(f"   {os.path.basename(file_path)}")
         
-        print(f"\nDossier d'exportation: {export_dir}")
+        print(f"\nExport directory: {export_dir}")
         
     except Exception as e:
-        print(f"Erreur lors de l'exportation: {str(e)}")
+        print(f"Error during export: {str(e)}")
 
 def display_detailed_results(results):
     """
-    Displays more detailed results
+    Displays detailed analysis results
     
     Args:
         results: Dictionary containing analysis results
     """
     print(f"\n" + "="*60)
-    print("RÉSULTATS DÉTAILLÉS")
+    print("DETAILED RESULTS")
     print("="*60)
     
-    # Display all duplicates
     if results['duplicate_cases']:
-        print(f"\nTOUS LES DOUBLONS ({len(results['duplicate_cases'])}):")
+        print(f"\nALL DUPLICATES ({len(results['duplicate_cases'])}):")
         print("-" * 50)
         for i, case in enumerate(results['duplicate_cases'], 1):
             print(f"\n{i:2d}. {case['author']}")
             print(f"    Score: {case['similarity_score']:.3f}")
-            print(f"    Titre 1 ({case['publication1']['year']}): {case['publication1']['title']}")
-            print(f"    Titre 2 ({case['publication2']['year']}): {case['publication2']['title']}")
+            print(f"    Title 1 ({case['publication1']['year']}): {case['publication1']['title']}")
+            print(f"    Title 2 ({case['publication2']['year']}): {case['publication2']['title']}")
     
-    # Display all homonyms
     if results['homonym_cases']:
-        print(f"\nTOUS LES HOMONYMES ({len(results['homonym_cases'])}):")
+        print(f"\nALL HOMONYMS ({len(results['homonym_cases'])}):")
         print("-" * 50)
         for i, case in enumerate(results['homonym_cases'], 1):
             print(f"\n{i:2d}. {case['author']}")
-            print(f"    Domaines: {case['publication1']['domain']} / {case['publication2']['domain']}")
-            print(f"    Titre 1 ({case['publication1']['year']}): {case['publication1']['title']}")
-            print(f"    Titre 2 ({case['publication2']['year']}): {case['publication2']['title']}")
+            print(f"    Domains: {case['publication1']['domain']} / {case['publication2']['domain']}")
+            print(f"    Title 1 ({case['publication1']['year']}): {case['publication1']['title']}")
+            print(f"    Title 2 ({case['publication2']['year']}): {case['publication2']['title']}")
 
 def add_detection_arguments(parser):
     """
@@ -636,127 +763,78 @@ def add_detection_arguments(parser):
     Args:
         parser: ArgumentParser instance to add arguments to
     """
-    
     parser.add_argument(
         "--analyse",
-        help="Lancer l'analyse des doublons et homonymes sur un fichier CSV du dossier extraction",
+        help="Launch duplicate and homonym analysis on a CSV file from extraction folder",
         action="store_true"
     )
 
 def main():
     """
-    Main function that handles command line arguments and orchestrates the entire 
-    HAL data extraction and analysis workflow.
+    Main function that orchestrates the two-step HAL data extraction workflow
     
-    Supports filtering by year, domain, document type, configurable name matching
-    sensitivity, automatic generation of graphs and reports, and duplicate/homonym detection.
+    STEP 1: Extract HAL identifiers from CSV with nom/prenom
+    STEP 2: Extract publications using CSV with IdHAL column
+    
+    Also supports detection analysis, graph generation, and report creation
     """
     parser = argparse.ArgumentParser(
         description=(
-            "This file allows scientific data extraction from the HAL database.\n"
-            "Possibility to filter publications by period, scientific domain, document type,\n"
-            "and configure the sensitivity of author name matching.\n\n"
-            "NEW THESIS TYPES:\n"
-            "- 'Thèse (Doctorant)' : PhD theses only (THESE documents)\n"
-            "- 'Thèse (HDR)' : HDR theses only (HDR documents)\n"
-            "- 'Thèse' : Both PhD and HDR theses (THESE + HDR documents)\n\n"
+            "HAL DATA EXTRACTION - TWO-STEP WORKFLOW\n\n"
+            "STEP 1: Extract HAL identifiers\n"
+            "  - Input: CSV with 'nom' and 'prenom' columns\n"
+            "  - Output: CSV with added 'IdHAL' column\n"
+            "  - Purpose: Get HAL identifiers for optimal extraction\n\n"
+            "STEP 2: Extract publications\n"
+            "  - Input: CSV with 'IdHAL' column (from Step 1)\n"
+            "  - Output: Full publication data\n"
+            "  - Purpose: Extract complete publication information\n"
+            "  - Supports filters: period, domain, document type\n\n"
             "DETECTION ANALYSIS:\n"
-            "- Analyze CSV files with authIdPerson_i based method\n"
-            "- Detect duplicates and homonyms automatically\n"
-            "- Clean data and export results\n\n"
-            "IMPORTANT: The system uses double queries (prenom nom + nom prenom) for better results."
+            "  - Analyze CSV files for duplicates and homonyms\n"
+            "  - Method based on HAL authIdPerson_i\n"
+            "  - Automatic data cleaning and export\n\n"
+            "The two-step approach ensures optimal extraction by using\n"
+            "HAL identifiers when available, with fallback to name matching."
         ),
         epilog=(
-            'Examples:\n'
-            'python main.py --year 2019-2024 --domain "Mathematics" --type "Thèse (Doctorant)"\n'
-            'python main.py --type "Thèse (HDR)" --graphs\n'
-            'python main.py --type "Thèse" --threshold 1\n'
-            'python main.py --threshold 3 --reportpdf\n'
-            'python main.py --graphs --reportpdf --reportlatex\n\n'
-            'Detection analysis examples:\n'
-            'python main.py --analyse\n\n'
-            'To see available types and sensitivity levels:\n'
-            'python main.py --list-types\n'
-            'python main.py --list-sensitivity'
+            'Examples:\n\n'
+            'Interactive mode (recommended):\n'
+            '  python main.py\n\n'
+            'Step 2 with filters:\n'
+            '  python main.py --year 2019-2024 --domain "Mathematics"\n'
+            '  python main.py --type "Thèse" --threshold 1\n\n'
+            'Step 2 with outputs:\n'
+            '  python main.py --graphs\n'
+            '  python main.py --graphs --reportpdf\n\n'
+            'Detection analysis:\n'
+            '  python main.py --analyse\n\n'
+            'List available options:\n'
+            '  python main.py --list-types\n'
+            '  python main.py --list-domains\n'
+            '  python main.py --list-sensitivity'
         ),
         formatter_class=argparse.RawTextHelpFormatter,
     )
 
-    parser.add_argument(
-        "--year", 
-        help="Filter publications by period (format: YYYY-YYYY). Example: 2019-2024.", 
-        type=str
-    )
-    parser.add_argument(
-        "--domain",
-        help='Filter publications by scientific domain. Example: "Mathematics".',
-        type=str,
-    )
-    parser.add_argument(
-        "--type", 
-        help=(
-            'Filter publications by document type. Examples:\n'
-            '  "Thèse (Doctorant)" - PhD theses only\n'
-            '  "Thèse (HDR)" - HDR theses only\n'
-            '  "Thèse" - Both PhD and HDR theses\n'
-            '  "Article de journal" - Journal articles'
-        ), 
-        type=str
-    )
-    parser.add_argument(
-        "--threshold",
-        help=(
-            f"Sensitivity threshold for name matching (0-4). Default: {DEFAULT_THRESHOLD}\n"
-            "0 = very strict (exact match only)\n"
-            "1 = strict (1 character difference maximum)\n"
-            "2 = moderate (2 characters difference maximum) - Default\n"
-            "3 = permissive (3 characters difference maximum)\n"
-            "4 = very permissive (4 characters difference maximum)"
-        ),
-        type=int,
-        choices=[0, 1, 2, 3, 4],
-        default=DEFAULT_THRESHOLD
-    )
-    parser.add_argument(
-        "--list-domains", 
-        help="Display the complete list of available domains for filtering.", 
-        action="store_true"
-    )
-    parser.add_argument(
-        "--list-types", 
-        help="Display the complete list of available document types for filtering.", 
-        action="store_true"
-    )
-    parser.add_argument(
-        "--list-sensitivity",
-        help="Display the list of available sensitivity levels.",
-        action="store_true"
-    )
-    parser.add_argument(
-        "--graphs",
-        help="Automatically generate graphs after extraction.",
-        action="store_true"
-    )
-    parser.add_argument(
-        "--reportpdf",
-        help="Automatically generate a PDF report after extraction.",
-        action="store_true"
-    )
-    parser.add_argument(
-        "--reportlatex",
-        help="Automatically generate a LaTeX report after extraction.",
-        action="store_true"
-    )
+    parser.add_argument("--year", help="Filter publications by period (format: YYYY-YYYY). Example: 2019-2024.", type=str)
+    parser.add_argument("--domain", help='Filter publications by scientific domain. Example: "Mathematics".', type=str)
+    parser.add_argument("--type", help='Filter publications by document type. Example: "Thèse", "Article de journal"', type=str)
+    parser.add_argument("--threshold", help=f"Sensitivity threshold for name matching (0-4). Default: {DEFAULT_THRESHOLD}\n0 = very strict (exact match only)\n1 = strict (1 character difference maximum)\n2 = moderate (2 characters difference maximum) - Default\n3 = permissive (3 characters difference maximum)\n4 = very permissive (4 characters difference maximum)", type=int, choices=[0, 1, 2, 3, 4], default=DEFAULT_THRESHOLD)
+    parser.add_argument("--list-domains", help="Display the complete list of available domains for filtering.", action="store_true")
+    parser.add_argument("--list-types", help="Display the complete list of available document types for filtering.", action="store_true")
+    parser.add_argument("--list-sensitivity", help="Display the list of available sensitivity levels.", action="store_true")
+    parser.add_argument("--graphs", help="Automatically generate graphs after extraction.", action="store_true")
+    parser.add_argument("--reportpdf", help="Automatically generate a PDF report after extraction.", action="store_true")
+    parser.add_argument("--reportlatex", help="Automatically generate a LaTeX report after extraction.", action="store_true")
 
-    # Add arguments for detection
     add_detection_arguments(parser)
 
     global args
     args = parser.parse_args()
 
-    # Handle detection analysis option
     if args.analyse:
-        print("Mode analyse des doublons et homonymes activé")
+        print("Duplicate and homonym detection mode activated")
         analyze_csv_cli()
         exit(0)
 
@@ -781,7 +859,6 @@ def main():
         types = list_types()
         print("List of available document types for filtering:\n")
         
-        # Group thesis types for better display
         thesis_types = []
         other_types = []
         
@@ -794,14 +871,7 @@ def main():
         if thesis_types:
             print("THESIS TYPES:")
             for code, name in thesis_types:
-                if 'doctorant' in name.lower():
-                    print(f"  {code}: {name} (PhD only)")
-                elif 'hdr' in name.lower() and 'thèse' in name.lower():
-                    print(f"  {code}: {name} (HDR only)")
-                elif name == "Thèse":
-                    print(f"  {code}: {name} (PhD + HDR)")
-                else:
-                    print(f"  {code}: {name} (PhD + HDR)")
+                print(f"  {code}: {name}")
             print()
         
         print("OTHER DOCUMENT TYPES:")
@@ -810,104 +880,133 @@ def main():
         
         exit()
 
-    sensitivity_names = {0: "very strict", 1: "strict", 2: "moderate", 3: "permissive", 4: "very permissive"}
-    print(f"Sensitivity threshold used: {args.threshold} ({sensitivity_names[args.threshold]})")
-
-    try:
-        csv_file_path = get_user_selected_csv()
-        scientists_df = pd.read_csv(csv_file_path, encoding='utf-8-sig')
-        
-        display_extraction_summary()
-        
-    except FileNotFoundError as e:
-        print(e)
-        exit(1)
-
-    print("Starting extraction...")
-    init_progress_bar()
-
-    results = []
-    total_tasks = len(scientists_df)
+    workflow_choice = display_workflow_menu()
     
-    with ThreadPoolExecutor(max_workers=100) as executor:
-        future_to_row = {
-            executor.submit(fetch_data, row): row for index, row in scientists_df.iterrows()
-        }
-
-        completed_tasks = 0
-        for future in as_completed(future_to_row):
-            results.append(future.result())
-            completed_tasks += 1
-            create_progress_bar(completed_tasks, total_tasks, "Extraction in progress")
-
-    all_results = pd.concat(results, ignore_index=True)
-
-    extraction_directory = create_extraction_folder()
-    filename = generate_filename(args.year, args.domain, args.type)
-    output_path = os.path.join(extraction_directory, filename)
-    all_results.to_csv(output_path, index=False)
+    if workflow_choice == 1:
+        try:
+            csv_file_path = get_user_selected_csv()
+            scientists_df = pd.read_csv(csv_file_path, encoding='utf-8-sig')
+            
+            required_columns = ['nom', 'prenom']
+            missing_columns = [col for col in required_columns if col not in scientists_df.columns]
+            
+            if missing_columns:
+                print(f"\nERROR: Missing required columns: {', '.join(missing_columns)}")
+                print("The CSV file must contain 'nom' and 'prenom' columns.")
+                exit(1)
+            
+            sensitivity_names = {0: "very strict", 1: "strict", 2: "moderate", 3: "permissive", 4: "very permissive"}
+            print(f"\nSensitivity threshold: {args.threshold} ({sensitivity_names[args.threshold]})")
+            
+            output_file = extract_hal_ids_step1(scientists_df, threshold=args.threshold)
+            
+            print(f"\n{'='*60}")
+            print("NEXT STEP:")
+            print(f"{'='*60}")
+            print("Use the generated file for Step 2 (publication extraction)")
+            print(f"Run: python main.py")
+            print("Then select option 2 and choose the file:")
+            print(f"  {os.path.basename(output_file)}")
+            
+        except FileNotFoundError as e:
+            print(e)
+            exit(1)
+        except Exception as e:
+            print(f"Error during Step 1: {str(e)}")
+            exit(1)
     
-    print(f"Extraction completed. Results saved to: {output_path}")
-    
-    # Detailed statistics display
-    if not all_results.empty:
-        print(f"\nExtraction completed: {len(all_results)} publications found")
-        
-        # Display document type statistics if available
-        if 'Type de Document' in all_results.columns:
-            type_counts = all_results['Type de Document'].value_counts()
-            print("\nDocument types found:")
-            for doc_type, count in type_counts.items():
-                print(f"  {doc_type}: {count} publications")
-            
-            # Special message for thesis extractions
-            if args.type and any(keyword in args.type.lower() for keyword in ['thèse', 'habilitation']):
-                total_theses = sum(count for doc_type, count in type_counts.items() 
-                                 if 'thèse' in doc_type.lower() or 'habilitation' in doc_type.lower())
-                print(f"\n Total thesis-related documents: {total_theses}")
-
-    if args.graphs:
+    elif workflow_choice == 2:
         try:
-            print("Generating graphs...")
+            csv_file_path = select_extraction_csv()
+            scientists_df = pd.read_csv(csv_file_path, encoding='utf-8-sig')
             
-            # Create directories if they don't exist
-            os.makedirs("html", exist_ok=True)
-            os.makedirs("png", exist_ok=True)
+            required_columns = ['nom', 'prenom']
+            missing_columns = [col for col in required_columns if col not in scientists_df.columns]
             
-            plot_publications_by_year(output_path, output_html="html/pubs_by_year.html", output_png="png/pubs_by_year.png")
-            plot_document_types(output_path, output_html="html/type_distribution.html", output_png="png/type_distribution.png")
-            plot_keywords(output_path, output_html="html/keywords_distribution.html", output_png="png/keywords_distribution.png")
-            plot_top_domains(output_path, output_html="html/domain_distribution.html", output_png="png/domain_distribution.png")
-            plot_publications_by_author(output_path, output_html="html/top_authors.html", output_png="png/top_authors.png")
-            plot_structures_stacked(output_path, output_html="html/structures_stacked.html", output_png="png/structures_stacked.png")
-            plot_publications_trends(output_path, output_html="html/publication_trends.html", output_png="png/publication_trends.png")
-            plot_employer_distribution(output_path, output_html="html/employer_distribution.html", output_png="png/employer_distribution.png")
-            plot_theses_hdr_by_year(output_path, output_html="html/theses_hdr_by_year.html", output_png="png/theses_hdr_by_year.png")
-            plot_theses_keywords_wordcloud(output_path, output_html="html/theses_keywords_wordcloud.html", output_png="png/theses_keywords_wordcloud.png")
-            plot_temporal_evolution_by_team(output_path, output_html="html/temporal_evolution_teams.html", output_png="png/temporal_evolution_teams.png")
+            if missing_columns:
+                print(f"\nERROR: Missing required columns: {', '.join(missing_columns)}")
+                print("The CSV file must contain at minimum 'nom' and 'prenom' columns.")
+                exit(1)
             
-            dashboard_file = create_dashboard()
-            webbrowser.open("file://" + os.path.realpath(dashboard_file))
-            print("Graphs generated and opened in browser.")
+            has_idhal = 'IdHAL' in scientists_df.columns
+            if not has_idhal:
+                print("\nWARNING: No 'IdHAL' column found in the file.")
+                print("Extraction will use basic name matching (less optimal).")
+                proceed = input("Continue anyway? (y/n): ").lower()
+                if proceed not in ['y', 'yes']:
+                    print("Extraction cancelled.")
+                    exit(0)
+            
+            sensitivity_names = {0: "very strict", 1: "strict", 2: "moderate", 3: "permissive", 4: "very permissive"}
+            print(f"\nSensitivity threshold: {args.threshold} ({sensitivity_names[args.threshold]})")
+            
+            output_path = extract_publications_step2(
+                scientists_df,
+                period=args.year,
+                domain_filter=args.domain,
+                type_filter=args.type,
+                threshold=args.threshold
+            )
+            
+            if args.graphs:
+                try:
+                    print("\n" + "="*60)
+                    print("GENERATING GRAPHS")
+                    print("="*60)
+                    
+                    os.makedirs("html", exist_ok=True)
+                    os.makedirs("png", exist_ok=True)
+                    
+                    print("Creating visualizations...")
+                    
+                    plot_publications_by_year(output_path, output_html="html/pubs_by_year.html", output_png="png/pubs_by_year.png")
+                    plot_document_types(output_path, output_html="html/type_distribution.html", output_png="png/type_distribution.png")
+                    plot_keywords(output_path, output_html="html/keywords_distribution.html", output_png="png/keywords_distribution.png")
+                    plot_top_domains(output_path, output_html="html/domain_distribution.html", output_png="png/domain_distribution.png")
+                    plot_publications_by_author(output_path, output_html="html/top_authors.html", output_png="png/top_authors.png")
+                    plot_structures_stacked(output_path, output_html="html/structures_stacked.html", output_png="png/structures_stacked.png")
+                    plot_publications_trends(output_path, output_html="html/publication_trends.html", output_png="png/publication_trends.png")
+                    plot_employer_distribution(output_path, output_html="html/employer_distribution.html", output_png="png/employer_distribution.png")
+                    plot_theses_hdr_by_year(output_path, output_html="html/theses_hdr_by_year.html", output_png="png/theses_hdr_by_year.png")
+                    plot_theses_keywords_wordcloud(output_path, output_html="html/theses_keywords_wordcloud.html", output_png="png/theses_keywords_wordcloud.png")
+                    plot_temporal_evolution_by_team(output_path, output_html="html/temporal_evolution_teams.html", output_png="png/temporal_evolution_teams.png")
+                    
+                    dashboard_file = create_dashboard()
+                    webbrowser.open("file://" + os.path.realpath(dashboard_file))
+                    print("Graphs generated and opened in browser.")
+                    
+                except Exception as e:
+                    print(f"Error during graph generation: {e}")
+
+            if args.reportpdf:
+                try:
+                    print("\nGenerating PDF report...")
+                    nom_fichier_csv = os.path.basename(output_path).replace(".csv", "")
+                    generate_pdf_report(nom_fichier_csv)
+                    print("PDF report generated successfully.")
+                except Exception as e:
+                    print(f"Error during PDF report generation: {e}")
+
+            if args.reportlatex:
+                try:
+                    print("\nGenerating LaTeX report...")
+                    nom_fichier_csv = os.path.basename(output_path).replace(".csv", "")
+                    generate_latex_report(nom_fichier_csv)
+                    print("LaTeX report generated successfully.")
+                except Exception as e:
+                    print(f"Error during LaTeX report generation: {e}")
+            
+            print(f"\n{'='*60}")
+            print("EXTRACTION COMPLETED")
+            print(f"{'='*60}")
+            print(f"Results file: {output_path}")
+            
+        except FileNotFoundError as e:
+            print(e)
+            exit(1)
         except Exception as e:
-            print(f"Error during graph generation: {e}")
-
-    if args.reportpdf:
-        try:
-            print("Generating PDF report...")
-            nom_fichier_csv = os.path.basename(output_path).replace(".csv", "")
-            generate_pdf_report(nom_fichier_csv)
-        except Exception as e:
-            print(f"Error during PDF report generation: {e}")
-
-    if args.reportlatex:
-        try:
-            print("Generating LaTeX report...")
-            nom_fichier_csv = os.path.basename(output_path).replace(".csv", "")
-            generate_latex_report(nom_fichier_csv)
-        except Exception as e:
-            print(f"Error during LaTeX report generation: {e}")
-
-
+            print(f"Error during Step 2: {str(e)}")
+            exit(1)
+            
 if __name__ == "__main__":
     main()
