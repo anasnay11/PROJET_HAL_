@@ -135,20 +135,6 @@ def extract_author_id_simple(title, nom=None, prenom=None, threshold=2):
                         return standard_id
             except Exception:
                 continue
-    
-    # --- STEP 1.5: Specific check for non-standard, fixed-prefix IDs ---
-    if nom_search.upper() == 'COLLOC' and prenom_search.upper() == 'JOEL':
-        fixed_id = 'thx036976580304'
-        for base_api in base_apis:
-            query_url = f'{base_api}?q=authIdHal_s:"{fixed_id}"&wt=json&rows=1'
-            try:
-                response = requests.get(query_url, timeout=5)
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("response", {}).get("numFound", 0) >= 1:
-                        return fixed_id
-            except Exception:
-                continue
 
     # --- STEP 2: Search for publications and collect candidate IDs ---
     all_candidate_ids = set()
