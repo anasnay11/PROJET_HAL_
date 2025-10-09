@@ -106,6 +106,9 @@ def plot_publications_by_year(filename, output_html="html/pubs_by_year.html", ou
         # Load data
         df = pd.read_csv(filename)
         
+        # Filter data to keep only years >= 2005
+        df = df[df['Année de Publication'] >= 2005]
+        
         # Check "Publication Year" column
         year_counts = df['Année de Publication'].dropna().value_counts().reset_index()
         year_counts.columns = ['Année', 'Nombre de publications']
@@ -126,10 +129,10 @@ def plot_publications_by_year(filename, output_html="html/pubs_by_year.html", ou
         fig.write_html(output_html)
         fig.write_image(output_png)
 
-
 def plot_document_types(filename, output_html="html/type_distribution.html", output_png="png/type_distribution.png"):
     """
-    Display an interactive pie chart of document types.
+    Display an interactive pie chart of document types with improved visibility.
+    Shows only top 6 categories with percentages on the chart, and all categories displayed in the legend (no dropdown).
     """
     with graph_generation_lock:
     
@@ -137,9 +140,18 @@ def plot_document_types(filename, output_html="html/type_distribution.html", out
         create_directories()
         
         df = pd.read_csv(filename)
+        
+        # Filter data to keep only years >= 2005
+        df = df[df['Année de Publication'] >= 2005]
+        
+        # Count document types and sort by frequency
         doc_type_counts = df['Type de Document'].dropna().value_counts().reset_index()
         doc_type_counts.columns = ['Type de document', 'Nombre']
-    
+        
+        # Calculate percentages
+        doc_type_counts['Pourcentage'] = (doc_type_counts['Nombre'] / doc_type_counts['Nombre'].sum() * 100)
+        
+        # Create the pie chart
         fig = px.pie(
             doc_type_counts,
             names='Type de document',
@@ -147,9 +159,47 @@ def plot_document_types(filename, output_html="html/type_distribution.html", out
             title="Répartition des types de documents",
             hole=0.3
         )
-        fig.write_html(output_html)
+        
+        # Update traces to show percentages only for top 6
+        fig.update_traces(
+            textposition='outside',
+            textinfo='none',  # Don't show default text
+            marker=dict(line=dict(color='white', width=2))
+        )
+        
+        # Manually add text labels only for top 6
+        labels = []
+        for i, row in doc_type_counts.iterrows():
+            if i < 6:  # Only top 6
+                labels.append(f"{row['Type de document']}<br>{row['Pourcentage']:.2f}%")
+            else:
+                labels.append("")  # Empty label for others
+        
+        fig.update_traces(text=labels, textinfo='text')
+        
+        # Update layout with moderate size and show all legend items without dropdown
+        fig.update_layout(
+            width=1000,  # Moderate width
+            height=500,  # Moderate height
+            showlegend=True,
+            legend=dict(
+                orientation="v",  # Vertical legend
+                yanchor="top",
+                y=1,
+                xanchor="left",
+                x=1.02,  # Position legend to the right
+                itemsizing='constant',  # Keep consistent legend item sizes
+                tracegroupgap=0  # Remove gaps between legend items
+            ),
+            margin=dict(l=50, r=350, t=80, b=50)  # Moderate margins
+        )
+        
+        # Force all legend items to be visible (no dropdown)
+        fig.update_layout(legend=dict(itemclick=False, itemdoubleclick=False))
+        
+        # Save outputs
+        fig.write_html(output_html, config={'displayModeBar': False})
         fig.write_image(output_png)
-
 
 def plot_keywords(filename, output_html="html/keywords_distribution.html", output_png="png/keywords_distribution.png"):
     """
@@ -162,6 +212,10 @@ def plot_keywords(filename, output_html="html/keywords_distribution.html", outpu
         create_directories()
         
         df = pd.read_csv(filename)
+        
+        # Filter data to keep only years >= 2005
+        df = df[df['Année de Publication'] >= 2005]
+        
         keyword_counts = (
             df['Mots-clés']
             .dropna()
@@ -200,6 +254,10 @@ def plot_top_domains(filename, output_html="html/domain_distribution.html", outp
         create_directories()
         
         df = pd.read_csv(filename)
+        
+        # Filter data to keep only years >= 2005
+        df = df[df['Année de Publication'] >= 2005]
+        
         domain_counts = (
             df['Domaine']
             .dropna()
@@ -237,6 +295,10 @@ def plot_publications_by_author(filename, output_html="html/top_authors.html", o
         create_directories()
         
         df = pd.read_csv(filename)
+        
+        # Filter data to keep only years >= 2005
+        df = df[df['Année de Publication'] >= 2005]
+        
         author_counts = df['Nom'].dropna().value_counts().head(10).reset_index()
         author_counts.columns = ['Auteur', 'Nombre de publications']
     
@@ -251,7 +313,6 @@ def plot_publications_by_author(filename, output_html="html/top_authors.html", o
         fig.write_html(output_html)
         fig.write_image(output_png)
 
-
 def plot_structures_stacked(filename, output_html="html/structures_stacked.html", output_png="png/structures_stacked.png"):
     """
     Display a stacked bar chart of publications by structure and year.
@@ -263,6 +324,9 @@ def plot_structures_stacked(filename, output_html="html/structures_stacked.html"
         create_directories()
         
         df = pd.read_csv(filename)
+        
+        # Filter data to keep only years >= 2005
+        df = df[df['Année de Publication'] >= 2005]
         
         # Exclude 'Not available' values
         df = df[df['Laboratoire de Recherche'] != 'Non disponible']
@@ -295,6 +359,10 @@ def plot_publications_trends(filename, output_html="html/publication_trends.html
         create_directories()
         
         df = pd.read_csv(filename)
+        
+        # Filter data to keep only years >= 2005
+        df = df[df['Année de Publication'] >= 2005]
+        
         year_counts = df['Année de Publication'].dropna().value_counts().sort_index().reset_index()
         year_counts.columns = ['Année', 'Nombre de publications']
     
@@ -316,6 +384,9 @@ def plot_employer_distribution(filename, output_html="html/employer_distribution
     with graph_generation_lock:
     
         df = pd.read_csv(filename)
+        
+        # Filter data to keep only years >= 2005
+        df = df[df['Année de Publication'] >= 2005]
         
         # Clean employer names
         employer_counts = (
@@ -342,6 +413,7 @@ def plot_employer_distribution(filename, output_html="html/employer_distribution
         fig.write_html(output_html)
         fig.write_image(output_png)
 
+
 def plot_theses_hdr_by_year(filename, output_html="html/theses_hdr_by_year.html", output_png="png/theses_hdr_by_year.png"):
     """
     Display a bar chart of theses and HDR defended by year.
@@ -353,14 +425,17 @@ def plot_theses_hdr_by_year(filename, output_html="html/theses_hdr_by_year.html"
         create_directories()
         
         df = pd.read_csv(filename)
-
+        
+        # Filter data to keep only years >= 2005
+        df = df[df['Année de Publication'] >= 2005]
+        
         # Filter theses and HDR (case insensitive, ignore missing values)
         theses_hdr = df[df['Type de Document'].str.contains("Thèse|HDR", case=False, na=False)]
         
         # Count by year
         year_counts = theses_hdr['Année de Publication'].dropna().value_counts().sort_index().reset_index()
         year_counts.columns = ['Année', 'Nombre de thèses et HDR']
-
+        
         fig = px.bar(
             year_counts,
             x='Année',
@@ -368,7 +443,7 @@ def plot_theses_hdr_by_year(filename, output_html="html/theses_hdr_by_year.html"
             title="Thèses et HDR soutenues par année"
         )
         fig.update_layout(xaxis_tickangle=-45)
-
+        
         fig.write_html(output_html)
         fig.write_image(output_png)
 
@@ -392,6 +467,10 @@ def plot_theses_keywords_wordcloud(filename,
         
         # Load and prepare data
         df = pd.read_csv(filename)
+        
+        # Filter data to keep only years >= 2005
+        df = df[df['Année de Publication'] >= 2005]
+        
         theses_hdr = df[df['Type de Document'].str.contains("Thèse|HDR", case=False, na=False)]
         
         # Thorough cleaning
@@ -495,7 +574,7 @@ def plot_theses_keywords_wordcloud(filename,
             # Layout
             fig.update_layout(
                 title={
-                    'text': f"Top {len(top_words)} des mots-clés des thèses et HDR<br><sub style='font-size:14px'>Classement par fréquence d'apparition</sub>",
+                    'text': f"Top {len(top_words)} des mots-clés des thèses et HDR <br><sub style='font-size:14px'>Classement par fréquence d'apparition</sub>",
                     'x': 0.5,
                     'xanchor': 'center',
                     'font': {'size': 24, 'color': '#2c3e50', 'family': 'Arial Black'}
@@ -544,6 +623,7 @@ def plot_theses_keywords_wordcloud(filename,
         # Save files
         fig.write_html(output_html)
         fig.write_image(output_png)
+
         
 def plot_temporal_evolution_by_team(filename, output_html="html/temporal_evolution_teams.html", output_png="png/temporal_evolution_teams.png"):
     """
@@ -556,6 +636,9 @@ def plot_temporal_evolution_by_team(filename, output_html="html/temporal_evoluti
         create_directories()
         
         df = pd.read_csv(filename)
+        
+        # Filter data to keep only years >= 2005
+        df = df[df['Année de Publication'] >= 2005]
         
         # Filter out unavailable laboratories
         df_filtered = df[df['Laboratoire de Recherche'] != 'Non disponible'].copy()
@@ -597,5 +680,3 @@ def plot_temporal_evolution_by_team(filename, output_html="html/temporal_evoluti
         # Save files
         fig.write_html(output_html)
         fig.write_image(output_png)
-
-

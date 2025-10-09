@@ -21,13 +21,13 @@ def create_dashboard():
         <iframe src="type_distribution.html"></iframe>
         <iframe src="keywords_distribution.html"></iframe>
         <iframe src="domain_distribution.html"></iframe>
-        <iframe src="top_authors.html"></iframe>
-        <iframe src="structures_stacked.html"></iframe>
+        <!-- <iframe src="top_authors.html"></iframe> -->
+        <!-- <iframe src="structures_stacked.html"></iframe> -->
         <iframe src="publication_trends.html"></iframe>
         <iframe src="employer_distribution.html"></iframe>
+        <iframe src="temporal_evolution_teams.html"></iframe>
         <iframe src="theses_hdr_by_year.html"></iframe>
         <iframe src="theses_keywords_wordcloud.html"></iframe>
-        <iframe src="temporal_evolution_teams.html"></iframe>
     </body>
     </html>
     """
