@@ -118,6 +118,7 @@ def extract_author_id_simple(title, nom=None, prenom=None, threshold=2):
         'https://api.archives-ouvertes.fr/search/tel/'
     ]
     
+    print ("Standard id_clean ", standard_id_clean)
     for base_api in base_apis:
         for st_id in standard_id_clean:
             query_url = f'{base_api}?q=authIdHal_s:"{st_id}"&wt=json&rows=1'
@@ -125,12 +126,16 @@ def extract_author_id_simple(title, nom=None, prenom=None, threshold=2):
         
             try:
                 response = requests.get(query_url)
+                print ("Raw response", response)
+                input("Stop ")
                 if response.status_code == 200:
                     data = response.json()
                     num_found = data.get("response", {}).get("numFound", 0)
-                
+                    print ("Name found ", num_found, "\n data ", data, "\n response ", response)
+                    input("Stop ")
+
                     # If we found at least one document, the ID exists
-                    if num_foun >= 1:
+                    if num_found >= 1:
                         return st_id
                     
             except Exception:
