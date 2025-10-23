@@ -54,7 +54,7 @@ btn_verifier_id = None
 current_threshold = DEFAULT_THRESHOLD
 settings_file = "app_settings.json"
 
-# Global variables for new detection method
+# Global variables for detection
 analysis_results = None
 
 def load_settings():
@@ -300,8 +300,6 @@ def charger_csv_publications():
                             if not nom_parts:
                                 prenom_parts.append(word)
                             else:
-                                # If we already have nom parts, this shouldn't happen
-                                # but if it does, add it to nom anyway
                                 nom_parts.append(word)
                     
                     prenom = ' '.join(prenom_parts)
@@ -376,7 +374,6 @@ def afficher_recapitulatif_extraction(periode=None, types=None, domaines=None):
             details_list.append(f"• Période : {periode}")
         
         if types:
-            # Vérifier si THESE ou HDR sont sélectionnés pour informer l'utilisateur
             these_hdr_info = ""
             if any(t.lower() in ["thèse", "habilitation à diriger des recherches"] for t in types):
                 these_hdr_info = " (inclut automatiquement thèses et HDR)"
@@ -544,7 +541,7 @@ def afficher_recapitulatif_extraction_id():
 
 def extraction_identifiants():
     """
-    Extract identifiers in CSV format without generating statistical reports.
+    Extract identifiers in CSV format.
     """
     global message_label_extraction, progress_bar, last_generated_csv
 
@@ -602,7 +599,7 @@ def extraction_identifiants():
                         result_df.at[index, 'Details'] = id_result.get('Details', '{}')
                         result_df.at[index, 'ID_Atypique'] = id_result.get('ID_Atypique', 'NON')
                     else:
-                        # If it's a string (old version), process it
+                        # If it's a string, process it
                         result_df.at[index, 'IdHAL'] = str(id_result) if id_result != "Id non disponible" else ' '
                         result_df.at[index, 'Candidats'] = ''
                         result_df.at[index, 'Details'] = '{}'
@@ -915,7 +912,7 @@ def extraction_data(periode, types, domaines):
                 result = future.result()
                 all_results = pd.concat([all_results, result], ignore_index=True)
                 
-                # Update progress bar (simple increment, no percentage)
+                # Progress bar 
                 completed_count += 1
                 root.after(0, lambda: progress_bar.step(1))
                 root.after(0, lambda c=completed_count, t=total_rows: 
@@ -944,7 +941,7 @@ def extraction_data(periode, types, domaines):
     
 def verifier_identifiants():
     """
-    Ouvre un FRAME de vérification dans l'application principale (pas une nouvelle fenêtre).
+    Ouvre un FRAME de vérification dans l'application principale.
     """
     global last_generated_csv
     
@@ -982,7 +979,7 @@ def create_verification_frame(csv_file):
     Args:
         csv_file (str): Path to the CSV file containing extracted identifiers
     """
-    # Create a new tab for verification
+    # Create a tab for verification
     frame_verification = ttk.Frame(notebook)
     notebook.add(frame_verification, text="✓ Verification IdHAL")
     notebook.select(frame_verification)
@@ -1326,7 +1323,7 @@ def create_verification_frame(csv_file):
         output_path = os.path.join(directory, new_filename)
     
         try:
-            # Save the COMPLETE verified CSV (all rows)
+            # Save the complete verified CSV (all rows)
             df.to_csv(output_path, index=False, encoding='utf-8-sig')
         
             messagebox.showinfo("Save Successful",
